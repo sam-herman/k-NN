@@ -121,6 +121,9 @@ public class KNNConstants {
     public static final String FAISS_SIGNED_BYTE_SQ = "SQ8_direct_signed";
     public static final String FAISS_SQ_CLIP = "clip";
 
+    // JVector specific constants
+    public static final String JVECTOR_NAME = "jvector";
+
     // Parameter defaults/limits
     public static final Integer ENCODER_PARAMETER_PQ_CODE_COUNT_DEFAULT = 1;
     public static final Integer ENCODER_PARAMETER_PQ_CODE_COUNT_LIMIT = 1024;

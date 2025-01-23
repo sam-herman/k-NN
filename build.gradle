@@ -332,7 +332,7 @@ task windowsPatches(type:Exec) {
 task cmakeJniLib(type:Exec) {
     workingDir 'jni'
     def args = []
-    args.add("cmake")
+    args.add("/opt/homebrew/bin/cmake")
     args.add(".")
     args.add("-DKNN_PLUGIN_VERSION=${opensearch_version}")
     args.add("-DAVX2_ENABLED=${avx2_enabled}")

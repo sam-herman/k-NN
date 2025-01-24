@@ -7,7 +7,9 @@ package org.opensearch.knn.index.codec.lucene;
 
 import io.github.jbellis.jvector.graph.GraphIndexBuilder;
 import io.github.jbellis.jvector.graph.ListRandomAccessVectorValues;
+import io.github.jbellis.jvector.graph.OnHeapGraphIndex;
 import io.github.jbellis.jvector.graph.RandomAccessVectorValues;
+import io.github.jbellis.jvector.graph.disk.OnDiskGraphIndex;
 import io.github.jbellis.jvector.graph.similarity.BuildScoreProvider;
 import io.github.jbellis.jvector.vector.VectorizationProvider;
 import io.github.jbellis.jvector.vector.types.VectorFloat;
@@ -21,18 +23,16 @@ import org.apache.lucene.codecs.hnsw.FlatVectorsWriter;
 import org.apache.lucene.index.*;
 import org.apache.lucene.store.IndexOutput;
 import org.apache.lucene.util.IOUtils;
-import org.apache.lucene.util.InfoStream;
 import org.apache.lucene.util.RamUsageEstimator;
-import org.apache.lucene.util.packed.DirectMonotonicWriter;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
 import static org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsReader.SIMILARITY_FUNCTIONS;
-import static org.opensearch.knn.index.codec.lucene.JVectorFormat.DIRECT_MONOTONIC_BLOCK_SHIFT;
 
 
 public class JVectorWriter extends KnnVectorsWriter {
@@ -87,13 +87,9 @@ public class JVectorWriter extends KnnVectorsWriter {
     @Override
     public KnnFieldVectorsWriter<?> addField(FieldInfo fieldInfo) throws IOException {
         JVectorWriter.FieldWriter<?> newField =
-                JVectorWriter.FieldWriter.create(
-                        flatVectorWriter.getFlatVectorScorer(),
+                JVectorWriter.FieldWriter.create(flatVectorWriter.getFlatVectorScorer(),
                         flatVectorWriter.addField(fieldInfo),
-                        fieldInfo,
-                        M,
-                        beamWidth,
-                        segmentWriteState.infoStream);
+                        fieldInfo);
         fields.add(newField);
         return newField;
     }
@@ -105,7 +101,8 @@ public class JVectorWriter extends KnnVectorsWriter {
             if (sortMap == null) {
                 writeField(field);
             } else {
-                writeSortingField(field, sortMap);
+                throw new UnsupportedOperationException("Not implemented yet");
+                //writeSortingField(field, sortMap);
             }
         }
     }
@@ -113,10 +110,11 @@ public class JVectorWriter extends KnnVectorsWriter {
     private void writeField(JVectorWriter.FieldWriter<?> fieldData) throws IOException {
         // write graph
         long vectorIndexOffset = vectorIndex.getFilePointer();
-        OnHeapHnswGraph graph = fieldData.getGraph();
-        int[][] graphLevelNodeOffsets = writeGraph(graph);
+        OnHeapGraphIndex graph = fieldData.getGraph();
+        int[][] graphLevelNodeOffsets = writeGraph(graph, fieldData.randomAccessVectorValues);
         long vectorIndexLength = vectorIndex.getFilePointer() - vectorIndexOffset;
 
+        /*
         writeMeta(
                 fieldData.fieldInfo,
                 vectorIndexOffset,
@@ -124,14 +122,18 @@ public class JVectorWriter extends KnnVectorsWriter {
                 fieldData.getDocsWithFieldSet().cardinality(),
                 graph,
                 graphLevelNodeOffsets);
+
+         */
     }
 
+
+    /*
     private void writeMeta(
             FieldInfo field,
             long vectorIndexOffset,
             long vectorIndexLength,
             int count,
-            HnswGraph graph,
+            OnHeapGraphIndex graph,
             int[][] graphLevelNodeOffsets)
             throws IOException {
         meta.writeInt(field.number);
@@ -186,6 +188,15 @@ public class JVectorWriter extends KnnVectorsWriter {
             meta.writeLong(vectorIndex.getFilePointer() - start);
         }
     }
+    */
+
+    // TODO: implement this for proper return type
+    private int[][] writeGraph(OnHeapGraphIndex graph, RandomAccessVectorValues ravv) throws IOException {
+        // TODO: use the vector index inputStream instead of this!
+        Path indexPath = Files.createTempFile("siftsmall", ".inline");
+        OnDiskGraphIndex.write(graph, ravv, indexPath);
+        return null;
+    }
 
     static int distFuncToOrd(VectorSimilarityFunction func) {
         for (int i = 0; i < SIMILARITY_FUNCTIONS.size(); i++) {
@@ -236,50 +247,35 @@ public class JVectorWriter extends KnnVectorsWriter {
         private int lastDocID = -1;
         private final FlatFieldVectorsWriter<T> flatFieldVectorsWriter;
         private GraphIndexBuilder graphIndexBuilder;
+        RandomAccessVectorValues randomAccessVectorValues;
+
+        static FieldWriter<?> create(
+                FlatVectorsScorer scorer,
+                FlatFieldVectorsWriter<?> flatFieldVectorsWriter,
+                FieldInfo fieldInfo)
+                throws IOException {
+            switch (fieldInfo.getVectorEncoding()) {
+                case BYTE:
+                    return new FieldWriter<>(
+                        scorer,
+                        (FlatFieldVectorsWriter<byte[]>) flatFieldVectorsWriter,
+                        fieldInfo);
+                case FLOAT32:
+                    return new FieldWriter<>(
+                        scorer,
+                        (FlatFieldVectorsWriter<float[]>) flatFieldVectorsWriter,
+                        fieldInfo);
+                default:
+                    throw new IllegalArgumentException("Unsupported vector encoding: " + fieldInfo.getVectorEncoding());
+            }
+        }
 
         FieldWriter(
                 FlatVectorsScorer scorer,
                 FlatFieldVectorsWriter<T> flatFieldVectorsWriter,
-                FieldInfo fieldInfo,
-                int M,
-                int beamWidth,
-                InfoStream infoStream) {
+                FieldInfo fieldInfo) {
             this.fieldInfo = fieldInfo;
-            final RandomAccessVectorValues ravv;
-            final BuildScoreProvider bsp =
-                    switch (fieldInfo.getVectorEncoding()) {
-                        case BYTE ->
-                                /*
-                                * TODO: Does JVector support ByteVectorValues?
-                                scorer.getRandomVectorScorerSupplier(
-                                        fieldInfo.getVectorSimilarityFunction(),
-
-                                        ByteVectorValues.fromBytes(
-                                                (List<byte[]>) flatFieldVectorsWriter.getVectors(),
-                                                fieldInfo.getVectorDimension()));
-                                */
-                                throw new UnsupportedOperationException("ByteVectorValues not supported yet");
-                        case FLOAT32 -> {
-                            // score provider using the raw, in-memory vectors
-                            var vectors = new ArrayList<VectorFloat<?>>();
-                            var floats = (List<float[]>) flatFieldVectorsWriter.getVectors();
-                            var originalDimension = fieldInfo.getVectorDimension();
-                            assert originalDimension == floats.get(0).length;
-                            for (var f : floats) {
-                                vectors.add(VECTOR_TYPE_SUPPORT.createFloatVector(f));
-                            }
-                            ravv = new ListRandomAccessVectorValues(vectors, originalDimension);
-                            yield BuildScoreProvider.randomAccessScoreProvider(ravv, getVectorSimilarityFunction(fieldInfo));
-                        }
-
-                    };
             this.flatFieldVectorsWriter = Objects.requireNonNull(flatFieldVectorsWriter);
-            this.graphIndexBuilder = new GraphIndexBuilder(bsp,
-                    ravv.dimension(),
-                    16, // graph degree
-                    100, // construction search depth
-                    1.2f, // allow degree overflow during construction by this factor
-                    1.2f);
         }
 
         @Override
@@ -291,7 +287,12 @@ public class JVectorWriter extends KnnVectorsWriter {
                                 + "\" appears more than once in this document (only one value is allowed per field)");
             }
             flatFieldVectorsWriter.addValue(docID, vectorValue);
-            graphIndexBuilder.addGraphNode(docID, (VectorFloat<?>)vectorValue);
+            /*
+            var floats = (float[]) vectorValue;
+            var vector = (VECTOR_TYPE_SUPPORT.createFloatVector(floats));
+            graphIndexBuilder.addGraphNode(docID, vector);
+
+             */
             lastDocID = docID;
         }
 
@@ -304,7 +305,7 @@ public class JVectorWriter extends KnnVectorsWriter {
         public long ramBytesUsed() {
             return SHALLOW_SIZE
                     + flatFieldVectorsWriter.ramBytesUsed()
-                    + graphIndexBuilder.getGraph().ramBytesUsed();
+                    + (Objects.isNull(graphIndexBuilder) ?  0 : graphIndexBuilder.getGraph().ramBytesUsed());
         }
 
         private static io.github.jbellis.jvector.vector.VectorSimilarityFunction getVectorSimilarityFunction(FieldInfo fieldInfo) {
@@ -316,6 +317,50 @@ public class JVectorWriter extends KnnVectorsWriter {
                 default:
                     throw new IllegalArgumentException("Unsupported similarity function: " + fieldInfo.getVectorSimilarityFunction());
             }
+        }
+
+        /**
+         * This method will lazily initialize the graph. This is recommended to be called only during the flush stage
+         * @return OnHeapGraphIndex OnHeapGraphIndex
+         * @throws IOException IOException
+         */
+        public OnHeapGraphIndex getGraph() throws IOException {
+            final BuildScoreProvider bsp;
+            switch (fieldInfo.getVectorEncoding()) {
+                case BYTE:
+                        /*
+                        * TODO: Does JVector support ByteVectorValues?
+                        scorer.getRandomVectorScorerSupplier(
+                                fieldInfo.getVectorSimilarityFunction(),
+
+                                ByteVectorValues.fromBytes(
+                                        (List<byte[]>) flatFieldVectorsWriter.getVectors(),
+                                        fieldInfo.getVectorDimension()));
+                        */
+                    throw new UnsupportedOperationException("ByteVectorValues not supported yet");
+                case FLOAT32:
+                    // score provider using the raw, in-memory vectors
+                    var vectors = new ArrayList<VectorFloat<?>>();
+                    var floats = (List<float[]>) flatFieldVectorsWriter.getVectors();
+                    var originalDimension = fieldInfo.getVectorDimension();
+                    assert originalDimension == floats.get(0).length;
+                    for (var f : floats) {
+                        vectors.add(VECTOR_TYPE_SUPPORT.createFloatVector(f));
+                    }
+                    randomAccessVectorValues = new ListRandomAccessVectorValues(vectors, originalDimension);
+                    bsp = BuildScoreProvider.randomAccessScoreProvider(randomAccessVectorValues, getVectorSimilarityFunction(fieldInfo));
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unsupported vector encoding: " + fieldInfo.getVectorEncoding());
+
+            }
+            this.graphIndexBuilder = new GraphIndexBuilder(bsp,
+                    randomAccessVectorValues.dimension(),
+                    16, // graph degree
+                    100, // construction search depth
+                    1.2f, // allow degree overflow during construction by this factor
+                    1.2f);
+            return graphIndexBuilder.build(randomAccessVectorValues);
         }
     }
 }

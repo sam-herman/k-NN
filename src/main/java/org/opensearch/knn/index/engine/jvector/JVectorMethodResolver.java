@@ -12,13 +12,15 @@ import org.opensearch.knn.index.engine.KNNMethodContext;
 import org.opensearch.knn.index.engine.ResolvedMethodContext;
 import org.opensearch.knn.index.mapper.CompressionLevel;
 
-public class JVectorMethodResolver extends AbstractMethodResolver  {
+public class JVectorMethodResolver extends AbstractMethodResolver {
 
     @Override
-    public ResolvedMethodContext resolveMethod(KNNMethodContext knnMethodContext, KNNMethodConfigContext knnMethodConfigContext, boolean shouldRequireTraining, SpaceType spaceType) {
-        return ResolvedMethodContext.builder()
-                .knnMethodContext(knnMethodContext)
-                .compressionLevel(CompressionLevel.x1)
-                .build();
+    public ResolvedMethodContext resolveMethod(
+        KNNMethodContext knnMethodContext,
+        KNNMethodConfigContext knnMethodConfigContext,
+        boolean shouldRequireTraining,
+        SpaceType spaceType
+    ) {
+        return ResolvedMethodContext.builder().knnMethodContext(knnMethodContext).compressionLevel(CompressionLevel.x1).build();
     }
 }

@@ -29,7 +29,7 @@ import static org.opensearch.knn.common.KNNConstants.DISK_ANN;
  * The class makes use of pre-defined static mappings for supported k-NN methods and distance translations,
  * which determine how scores and distances should be interpreted and converted in various space types.
  */
-public class JVector extends JVMLibrary  {
+public class JVector extends JVMLibrary {
     private final Map<SpaceType, Function<Float, Float>> distanceTransform;
     private final MethodResolver methodResolver = new JVectorMethodResolver();
 
@@ -41,11 +41,11 @@ public class JVector extends JVMLibrary  {
     final static Map<String, KNNMethod> METHODS = Map.of(DISK_ANN, new JVectorDiskANNMethod());
 
     private final static Map<SpaceType, Function<Float, Float>> DISTANCE_TRANSLATIONS = ImmutableMap.<
-                    SpaceType,
-                    Function<Float, Float>>builder()
-            .put(SpaceType.COSINESIMIL, distance -> (2 - distance) / 2)
-            .put(SpaceType.INNER_PRODUCT, distance -> distance <= 0 ? 1 / (1 - distance) : distance + 1)
-            .build();
+        SpaceType,
+        Function<Float, Float>>builder()
+        .put(SpaceType.COSINESIMIL, distance -> (2 - distance) / 2)
+        .put(SpaceType.INNER_PRODUCT, distance -> distance <= 0 ? 1 / (1 - distance) : distance + 1)
+        .build();
 
     public final static JVector INSTANCE = new JVector(METHODS, Version.LATEST.toString(), DISTANCE_TRANSLATIONS);
 
@@ -80,7 +80,12 @@ public class JVector extends JVMLibrary  {
 
     // TODO: Implement this
     @Override
-    public ResolvedMethodContext resolveMethod(KNNMethodContext knnMethodContext, KNNMethodConfigContext knnMethodConfigContext, boolean shouldRequireTraining, SpaceType spaceType) {
+    public ResolvedMethodContext resolveMethod(
+        KNNMethodContext knnMethodContext,
+        KNNMethodConfigContext knnMethodConfigContext,
+        boolean shouldRequireTraining,
+        SpaceType spaceType
+    ) {
         return methodResolver.resolveMethod(knnMethodContext, knnMethodConfigContext, shouldRequireTraining, spaceType);
     }
 

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package org.opensearch.knn.index.codec.lucene;
+package org.opensearch.knn.index.codec.jvector;
 
 import io.github.jbellis.jvector.graph.GraphIndexBuilder;
 import io.github.jbellis.jvector.graph.ListRandomAccessVectorValues;
@@ -14,6 +14,7 @@ import io.github.jbellis.jvector.graph.similarity.BuildScoreProvider;
 import io.github.jbellis.jvector.vector.VectorizationProvider;
 import io.github.jbellis.jvector.vector.types.VectorFloat;
 import io.github.jbellis.jvector.vector.types.VectorTypeSupport;
+import lombok.extern.log4j.Log4j2;
 import org.apache.lucene.codecs.CodecUtil;
 import org.apache.lucene.codecs.KnnFieldVectorsWriter;
 import org.apache.lucene.codecs.KnnVectorsWriter;
@@ -28,6 +29,7 @@ import org.apache.lucene.util.RamUsageEstimator;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -35,6 +37,7 @@ import java.util.Objects;
 import static org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsReader.SIMILARITY_FUNCTIONS;
 
 
+@Log4j2
 public class JVectorWriter extends KnnVectorsWriter {
     private static final VectorTypeSupport VECTOR_TYPE_SUPPORT = VectorizationProvider.getInstance().getVectorTypeSupport();
     private static final long SHALLOW_RAM_BYTES_USED =
@@ -44,6 +47,7 @@ public class JVectorWriter extends KnnVectorsWriter {
     private final IndexOutput meta;
     private final IndexOutput vectorIndex;
     private final FlatVectorsWriter flatVectorWriter;
+    private final String indexDataFileName;
     private boolean finished = false;
 
     public JVectorWriter(SegmentWriteState state, FlatVectorsWriter flatVectorWriter) throws IOException {
@@ -53,11 +57,12 @@ public class JVectorWriter extends KnnVectorsWriter {
                 IndexFileNames.segmentFileName(
                         state.segmentInfo.name, state.segmentSuffix, JVectorFormat.META_EXTENSION);
 
-        String indexDataFileName =
+        this.indexDataFileName =
                 IndexFileNames.segmentFileName(
                         state.segmentInfo.name,
                         state.segmentSuffix,
                         JVectorFormat.VECTOR_INDEX_EXTENSION);
+
 
         boolean success = false;
         try {
@@ -193,8 +198,12 @@ public class JVectorWriter extends KnnVectorsWriter {
     // TODO: implement this for proper return type
     private int[][] writeGraph(OnHeapGraphIndex graph, RandomAccessVectorValues ravv) throws IOException {
         // TODO: use the vector index inputStream instead of this!
-        Path indexPath = Files.createTempFile("siftsmall", ".inline");
+        final Path jvecFilePath = Paths.get("/Users/sam.herman/projects/k-NN/build/tmp/", indexDataFileName);
+        Files.deleteIfExists(jvecFilePath);
+        Path indexPath = Files.createFile(jvecFilePath);
+        log.info("Writing graph to {}", indexPath);
         OnDiskGraphIndex.write(graph, ravv, indexPath);
+
         return null;
     }
 
@@ -240,7 +249,7 @@ public class JVectorWriter extends KnnVectorsWriter {
         return total;
     }
 
-    private static class FieldWriter<T> extends KnnFieldVectorsWriter<T> {
+    static class FieldWriter<T> extends KnnFieldVectorsWriter<T> {
         private static final long SHALLOW_SIZE =
                 RamUsageEstimator.shallowSizeOfInstance(JVectorWriter.FieldWriter.class);
         private final FieldInfo fieldInfo;
@@ -308,7 +317,7 @@ public class JVectorWriter extends KnnVectorsWriter {
                     + (Objects.isNull(graphIndexBuilder) ?  0 : graphIndexBuilder.getGraph().ramBytesUsed());
         }
 
-        private static io.github.jbellis.jvector.vector.VectorSimilarityFunction getVectorSimilarityFunction(FieldInfo fieldInfo) {
+        static io.github.jbellis.jvector.vector.VectorSimilarityFunction getVectorSimilarityFunction(FieldInfo fieldInfo) {
             switch (fieldInfo.getVectorSimilarityFunction()) {
                 case EUCLIDEAN:
                     return io.github.jbellis.jvector.vector.VectorSimilarityFunction.EUCLIDEAN;

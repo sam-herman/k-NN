@@ -14,13 +14,9 @@ import org.apache.lucene.tests.index.RandomIndexWriter;
 import org.apache.lucene.tests.util.LuceneTestCase;
 import org.junit.Test;
 import org.opensearch.knn.KNNTestCase;
-import org.opensearch.knn.index.codec.lucene.JVectorCodec;
+import org.opensearch.knn.index.codec.jvector.JVectorCodec;
 
 import java.io.IOException;
-import java.util.*;
-
-import static org.mockito.Mockito.*;
-import static org.opensearch.knn.common.KNNConstants.*;
 
 /**
  * Test used specifically for JVector
@@ -37,9 +33,10 @@ public class KNNJVectorTests extends KNNTestCase {
             // It's still there just to demonstrate that the histogram is formulated correctly and ignores other fields than the range field
             // specified
             final float[] target = new float[] { 1.0f, 1.0f };
-            Document doc = new Document();
-            for (int i = 0; i < 1; i++) {
-                doc.add(new KnnFloatVectorField("test_field", target, VectorSimilarityFunction.EUCLIDEAN));
+            for (int i = 1; i < 11; i++) {
+                final float[] source = new float[] { 1.0f, 0f / i };
+                final Document doc = new Document();
+                doc.add(new KnnFloatVectorField("test_field", source, VectorSimilarityFunction.EUCLIDEAN));
                 w.addDocument(doc);
             }
             w.commit();
@@ -47,9 +44,9 @@ public class KNNJVectorTests extends KNNTestCase {
             try (IndexReader reader = w.getReader()) {
                 final Query filterQuery = new MatchAllDocsQuery();
                 final IndexSearcher searcher = newSearcher(reader);
-                KnnFloatVectorQuery knnFloatVectorQuery = new KnnFloatVectorQuery("test_field", target, 10, filterQuery);
-                TopDocs topDocs = searcher.search(knnFloatVectorQuery, 10);
-                assertEquals(10, topDocs.totalHits.value);
+                KnnFloatVectorQuery knnFloatVectorQuery = new KnnFloatVectorQuery("test_field", target, 3, filterQuery);
+                TopDocs topDocs = searcher.search(knnFloatVectorQuery, 3);
+                assertEquals(3, topDocs.totalHits.value);
             }
         }
     }

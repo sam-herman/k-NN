@@ -96,7 +96,8 @@ public class JVectorReader extends KnnVectorsReader {
 
     @Override
     public void search(String field, float[] target, KnnCollector knnCollector, Bits acceptDocs) throws IOException {
-        // score provider using the raw, in-memory vectors
+        /* TODO: remove this
+                *** score provider using the raw, in-memory vectors ***
         FieldInfo fieldInfo = fieldInfos.fieldInfo(field);
         FloatVectorValues floatVectorValues = flatVectorsReader.getFloatVectorValues(field);
         var vectors = new ArrayList<VectorFloat<?>>(flatVectorsReader.getFloatVectorValues(field).size());
@@ -106,17 +107,18 @@ public class JVectorReader extends KnnVectorsReader {
 
         var originalDimension = fieldInfo.getVectorDimension();
         assert originalDimension == vectors.get(0).length();
-        RandomAccessVectorValues randomAccessVectorValues = new ListRandomAccessVectorValues(vectors, originalDimension);
+        RandomAccessVectorValues randomAccessVectorValues = new ListRandomAccessVectorValues(vectors, originalDimension)
+         */
+
         // on-disk indexes require a ReaderSupplier (not just a Reader) because we will want it to
         // open additional readers for searching
         try (ReaderSupplier rs = ReaderSupplierFactory.open(Paths.get("/Users/sam.herman/projects/k-NN/build/tmp/", indexDataFileName))) {
             OnDiskGraphIndex index = OnDiskGraphIndex.load(rs);
-            // measure our recall against the (exactly computed) ground truth
 
             // search for a random vector using a GraphSearcher and SearchScoreProvider
             VectorFloat<?> q = VECTOR_TYPE_SUPPORT.createFloatVector(target);
             try (GraphSearcher searcher = new GraphSearcher(index)) {
-                SearchScoreProvider ssp = SearchScoreProvider.exact(q, io.github.jbellis.jvector.vector.VectorSimilarityFunction.EUCLIDEAN, randomAccessVectorValues);
+                SearchScoreProvider ssp = SearchScoreProvider.exact(q, io.github.jbellis.jvector.vector.VectorSimilarityFunction.EUCLIDEAN, index.getView());
                 SearchResult sr = searcher.search(ssp, knnCollector.k(), io.github.jbellis.jvector.util.Bits.ALL);
                 for (SearchResult.NodeScore ns : sr.getNodes()) {
                     knnCollector.collect(ns.node, ns.score);

@@ -22,7 +22,7 @@ import java.io.IOException;
 /**
  * Test used specifically for JVector
  */
-public class KNNJVectorTests extends KNNTestCase {
+public class KNNJVectorTests extends LuceneTestCase {
 
     @Test
     public void testJVectorKnnIndex() throws IOException {
@@ -44,6 +44,7 @@ public class KNNJVectorTests extends KNNTestCase {
             }
             w.commit();
 
+
             try (IndexReader reader = w.getReader()) {
                 final Query filterQuery = new MatchAllDocsQuery();
                 final IndexSearcher searcher = newSearcher(reader);
@@ -51,13 +52,15 @@ public class KNNJVectorTests extends KNNTestCase {
                 TopDocs topDocs = searcher.search(knnFloatVectorQuery, k);
                 assertEquals(k, topDocs.totalHits.value);
                 assertEquals(9, topDocs.scoreDocs[0].doc);
-                Assert.assertEquals(1 - Math.pow(1.0f/10.0f, 2), topDocs.scoreDocs[0].score, 0.01f);
+                Assert.assertEquals(VectorSimilarityFunction.EUCLIDEAN.compare(target, new float[]{0.0f, 1.0f / 10.0f}), topDocs.scoreDocs[0].score, 0.01f);
                 assertEquals(8, topDocs.scoreDocs[1].doc);
-                Assert.assertEquals(1 - Math.pow(1.0f/9.0f, 2), topDocs.scoreDocs[0].score, 0.1f);
+                Assert.assertEquals(VectorSimilarityFunction.EUCLIDEAN.compare(target, new float[]{0.0f, 1.0f / 9.0f}), topDocs.scoreDocs[0].score, 0.1f);
                 assertEquals(7, topDocs.scoreDocs[2].doc);
-                Assert.assertEquals(1 - Math.pow(1.0f/8.0f, 2), topDocs.scoreDocs[0].score, 0.1f);
-
+                Assert.assertEquals(VectorSimilarityFunction.EUCLIDEAN.compare(target, new float[]{0.0f, 1.0f / 8.0f}), topDocs.scoreDocs[0].score, 0.1f);
             }
+
+            // TODO: Wire the execution thread pool to {@link IndexGraphBuilder} to avoid the failure of the UT due to leaked thread pool warning.
+            // Currently {@link IndexGraphBuilder} is using the default ForkJoinPool.commonPool() which is not being shutdown.
         }
     }
 }

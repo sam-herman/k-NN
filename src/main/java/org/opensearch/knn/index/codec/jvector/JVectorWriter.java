@@ -46,9 +46,10 @@ public class JVectorWriter extends KnnVectorsWriter {
 
     private final IndexOutput meta;
     private final IndexOutput vectorIndex;
-    private final FlatVectorsWriter flatVectorWriter;
     private final String indexDataFileName;
+    private final FlatVectorsWriter flatVectorWriter;
     private boolean finished = false;
+
 
     public JVectorWriter(SegmentWriteState state, FlatVectorsWriter flatVectorWriter) throws IOException {
         this.flatVectorWriter = flatVectorWriter;
@@ -256,7 +257,10 @@ public class JVectorWriter extends KnnVectorsWriter {
         private int lastDocID = -1;
         private final FlatFieldVectorsWriter<T> flatFieldVectorsWriter;
         private GraphIndexBuilder graphIndexBuilder;
+        private final List<VectorFloat<?>> floatVectors = new ArrayList<>();
         RandomAccessVectorValues randomAccessVectorValues;
+
+
 
         static FieldWriter<?> create(
                 FlatVectorsScorer scorer,
@@ -295,6 +299,7 @@ public class JVectorWriter extends KnnVectorsWriter {
                                 + fieldInfo.name
                                 + "\" appears more than once in this document (only one value is allowed per field)");
             }
+            floatVectors.add(VECTOR_TYPE_SUPPORT.createFloatVector(vectorValue));
             flatFieldVectorsWriter.addValue(docID, vectorValue);
             /*
             var floats = (float[]) vectorValue;
@@ -348,15 +353,8 @@ public class JVectorWriter extends KnnVectorsWriter {
                         */
                     throw new UnsupportedOperationException("ByteVectorValues not supported yet");
                 case FLOAT32:
-                    // score provider using the raw, in-memory vectors
-                    var vectors = new ArrayList<VectorFloat<?>>();
-                    var floats = (List<float[]>) flatFieldVectorsWriter.getVectors();
                     var originalDimension = fieldInfo.getVectorDimension();
-                    assert originalDimension == floats.get(0).length;
-                    for (var f : floats) {
-                        vectors.add(VECTOR_TYPE_SUPPORT.createFloatVector(f));
-                    }
-                    randomAccessVectorValues = new ListRandomAccessVectorValues(vectors, originalDimension);
+                    randomAccessVectorValues = new ListRandomAccessVectorValues(floatVectors, originalDimension);
                     bsp = BuildScoreProvider.randomAccessScoreProvider(randomAccessVectorValues, getVectorSimilarityFunction(fieldInfo));
                     break;
                 default:

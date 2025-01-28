@@ -39,7 +39,6 @@ import static org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsReader.SIMILA
 
 @Log4j2
 public class JVectorWriter extends KnnVectorsWriter {
-    private static final VectorTypeSupport VECTOR_TYPE_SUPPORT = VectorizationProvider.getInstance().getVectorTypeSupport();
     private static final long SHALLOW_RAM_BYTES_USED =
             RamUsageEstimator.shallowSizeOfInstance(JVectorWriter.class);
     private final List<JVectorWriter.FieldWriter<?>> fields = new ArrayList<>();
@@ -251,6 +250,7 @@ public class JVectorWriter extends KnnVectorsWriter {
     }
 
     static class FieldWriter<T> extends KnnFieldVectorsWriter<T> {
+        private static final VectorTypeSupport VECTOR_TYPE_SUPPORT = VectorizationProvider.getInstance().getVectorTypeSupport();
         private static final long SHALLOW_SIZE =
                 RamUsageEstimator.shallowSizeOfInstance(JVectorWriter.FieldWriter.class);
         private final FieldInfo fieldInfo;

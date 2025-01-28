@@ -80,6 +80,10 @@ public enum KNNEngine implements KNNLibrary {
             return LUCENE;
         }
 
+        if (JVECTOR.getName().equalsIgnoreCase(name)) {
+            return JVECTOR;
+        }
+
         throw new IllegalArgumentException(String.format("Invalid engine type: %s", name));
     }
 

@@ -7,25 +7,17 @@ package org.opensearch.knn;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import lombok.SneakyThrows;
-import org.apache.commons.lang.math.RandomUtils;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
-import org.apache.lucene.util.VectorUtil;
 import org.junit.After;
 import org.opensearch.client.Response;
-import org.opensearch.client.ResponseException;
-import org.opensearch.common.Nullable;
-import org.opensearch.common.settings.Settings;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.xcontent.XContentBuilder;
-import org.opensearch.index.query.QueryBuilder;
-import org.opensearch.index.query.QueryBuilders;
 import org.opensearch.knn.common.KNNConstants;
 import org.opensearch.knn.index.KNNVectorSimilarityFunction;
 import org.opensearch.knn.index.SpaceType;
 import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.engine.KNNEngine;
-import org.opensearch.knn.index.query.KNNQueryBuilder;
+import org.opensearch.test.OpenSearchIntegTestCase;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -37,6 +29,7 @@ import java.util.stream.Collectors;
 
 import static org.opensearch.knn.common.KNNConstants.*;
 
+@OpenSearchIntegTestCase.ClusterScope(numDataNodes = 1)
 public class JVectorEngineIT extends KNNRestTestCase {
 
     private static final int DIMENSION = 3;
@@ -102,7 +95,7 @@ public class JVectorEngineIT extends KNNRestTestCase {
             .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
             .field(DIMENSION_FIELD_NAME, DIMENSION)
             .startObject(KNNConstants.KNN_METHOD)
-            .field(KNNConstants.NAME, METHOD_HNSW)
+            .field(KNNConstants.NAME, DISK_ANN)
             .field(KNNConstants.METHOD_PARAMETER_SPACE_TYPE, SpaceType.L2.getValue())
             .field(KNNConstants.KNN_ENGINE, KNNEngine.JVECTOR.getName())
             .startObject(KNNConstants.PARAMETERS)
@@ -127,7 +120,7 @@ public class JVectorEngineIT extends KNNRestTestCase {
         assertEquals(1, getDocCount(INDEX_NAME));
     }
 
-    private void createKnnIndexMappingWithLuceneEngine(int dimension, SpaceType spaceType, VectorDataType vectorDataType) throws Exception {
+    private void createKnnIndexMappingWithJVectorEngine(int dimension, SpaceType spaceType, VectorDataType vectorDataType) throws Exception {
         XContentBuilder builder = XContentFactory.jsonBuilder()
             .startObject()
             .startObject(PROPERTIES_FIELD_NAME)
@@ -136,9 +129,9 @@ public class JVectorEngineIT extends KNNRestTestCase {
             .field(DIMENSION_FIELD_NAME, dimension)
             .field(VECTOR_DATA_TYPE_FIELD, vectorDataType)
             .startObject(KNNConstants.KNN_METHOD)
-            .field(KNNConstants.NAME, METHOD_HNSW)
+            .field(KNNConstants.NAME, DISK_ANN)
             .field(KNNConstants.METHOD_PARAMETER_SPACE_TYPE, spaceType.getValue())
-            .field(KNNConstants.KNN_ENGINE, KNNEngine.LUCENE.getName())
+            .field(KNNConstants.KNN_ENGINE, KNNEngine.JVECTOR.getName())
             .startObject(KNNConstants.PARAMETERS)
             .field(KNNConstants.METHOD_PARAMETER_M, M)
             .field(KNNConstants.METHOD_PARAMETER_EF_CONSTRUCTION, EF_CONSTRUCTION)
@@ -154,7 +147,7 @@ public class JVectorEngineIT extends KNNRestTestCase {
 
     private void baseQueryTest(SpaceType spaceType) throws Exception {
 
-        createKnnIndexMappingWithLuceneEngine(DIMENSION, spaceType, VectorDataType.FLOAT);
+        createKnnIndexMappingWithJVectorEngine(DIMENSION, spaceType, VectorDataType.FLOAT);
         for (int j = 0; j < TEST_INDEX_VECTORS.length; j++) {
             addKnnDoc(INDEX_NAME, Integer.toString(j + 1), FIELD_NAME, TEST_INDEX_VECTORS[j]);
         }

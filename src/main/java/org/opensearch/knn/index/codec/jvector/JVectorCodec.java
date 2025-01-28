@@ -31,6 +31,6 @@ public class JVectorCodec extends FilterCodec {
 
     @Override
     public KnnVectorsFormat knnVectorsFormat() {
-        return new JVectorFormat(CODEC_NAME);
+        return new JVectorFormat();
     }
 }

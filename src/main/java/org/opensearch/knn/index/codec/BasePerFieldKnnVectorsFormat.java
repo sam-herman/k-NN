@@ -15,6 +15,7 @@ import org.opensearch.index.IndexSettings;
 import org.opensearch.index.mapper.MapperService;
 import org.opensearch.knn.index.KNNSettings;
 import org.opensearch.knn.index.codec.KNN990Codec.NativeEngines990KnnVectorsFormat;
+import org.opensearch.knn.index.codec.jvector.JVectorFormat;
 import org.opensearch.knn.index.codec.params.KNNScalarQuantizedVectorsFormatParams;
 import org.opensearch.knn.index.codec.params.KNNVectorsFormatParams;
 import org.opensearch.knn.index.engine.KNNEngine;
@@ -129,6 +130,8 @@ public abstract class BasePerFieldKnnVectorsFormat extends PerFieldKnnVectorsFor
                 knnVectorsFormatParams.getBeamWidth()
             );
             return vectorsFormatSupplier.apply(knnVectorsFormatParams);
+        } else if (engine == KNNEngine.JVECTOR) {
+            return new JVectorFormat();
         }
 
         // All native engines to use NativeEngines990KnnVectorsFormat

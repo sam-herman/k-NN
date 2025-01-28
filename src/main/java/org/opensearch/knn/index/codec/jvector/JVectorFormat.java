@@ -17,6 +17,7 @@ import org.apache.lucene.index.SegmentWriteState;
 import java.io.IOException;
 
 public class JVectorFormat extends KnnVectorsFormat {
+    static final String NAME = "JVectorFormat";
     static final String META_CODEC_NAME = "JVectorVectorsFormatMeta";
     static final String VECTOR_INDEX_CODEC_NAME = "JVectorVectorsFormatIndex";
     static final String META_EXTENSION = "jmeta";
@@ -27,6 +28,10 @@ public class JVectorFormat extends KnnVectorsFormat {
 
     private static final FlatVectorsFormat flatVectorsFormat =
             new Lucene99FlatVectorsFormat(FlatVectorScorerUtil.getLucene99FlatVectorsScorer());
+    public JVectorFormat() {
+        this(NAME);
+    }
+
     /**
      * Sole constructor
      *

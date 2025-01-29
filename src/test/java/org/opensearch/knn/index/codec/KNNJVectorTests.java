@@ -65,6 +65,7 @@ public class KNNJVectorTests extends LuceneTestCase {
                 Assert.assertEquals(VectorSimilarityFunction.EUCLIDEAN.compare(target, new float[]{0.0f, 1.0f / 9.0f}), topDocs.scoreDocs[0].score, 0.1f);
                 assertEquals(7, topDocs.scoreDocs[2].doc);
                 Assert.assertEquals(VectorSimilarityFunction.EUCLIDEAN.compare(target, new float[]{0.0f, 1.0f / 8.0f}), topDocs.scoreDocs[0].score, 0.1f);
+                log.info("successfully completed search tests");
             }
 
             // TODO: Wire the execution thread pool to {@link IndexGraphBuilder} to avoid the failure of the UT due to leaked thread pool warning.

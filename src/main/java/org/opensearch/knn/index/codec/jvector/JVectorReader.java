@@ -16,6 +16,7 @@ import io.github.jbellis.jvector.graph.similarity.SearchScoreProvider;
 import io.github.jbellis.jvector.vector.VectorizationProvider;
 import io.github.jbellis.jvector.vector.types.VectorFloat;
 import io.github.jbellis.jvector.vector.types.VectorTypeSupport;
+import lombok.extern.log4j.Log4j2;
 import org.apache.lucene.codecs.CodecUtil;
 import org.apache.lucene.codecs.KnnVectorsReader;
 import org.apache.lucene.codecs.hnsw.FlatVectorsReader;
@@ -31,6 +32,7 @@ import org.apache.lucene.util.packed.DirectMonotonicReader;
 import io.github.jbellis.jvector.disk.ReaderSupplierFactory;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -39,6 +41,7 @@ import java.util.function.Function;
 
 import static org.opensearch.knn.index.codec.jvector.JVectorWriter.FieldWriter.getVectorSimilarityFunction;
 
+@Log4j2
 public class JVectorReader extends KnnVectorsReader {
     private static final VectorTypeSupport VECTOR_TYPE_SUPPORT = VectorizationProvider.getInstance().getVectorTypeSupport();
 
@@ -59,10 +62,12 @@ public class JVectorReader extends KnnVectorsReader {
 
         Directory dir = state.directory;
         while (!(dir instanceof FSDirectory)) {
+            final String dirType = dir.getClass().getName();
+            log.info("unwrapping dir of type: {} to find path", dirType);
             if (dir instanceof FilterDirectory) {
                 dir = ((FilterDirectory) dir).getDelegate();
             } else {
-                throw new IllegalArgumentException("directory must be FSDirectory or a wrapper around it");
+                throw new IllegalArgumentException("directory must be FSDirectory or a wrapper around it but instead had type: " + dirType);
             }
         }
 
@@ -126,9 +131,9 @@ public class JVectorReader extends KnnVectorsReader {
         RandomAccessVectorValues randomAccessVectorValues = new ListRandomAccessVectorValues(vectors, originalDimension)
          */
 
+        final Path jvecFilePath = JVectorFormat.getVectorIndexPath(directoryBasePath, baseDataFileName, field);
         // on-disk indexes require a ReaderSupplier (not just a Reader) because we will want it to
         // open additional readers for searching
-        final Path jvecFilePath = JVectorFormat.getVectorIndexPath(directoryBasePath, baseDataFileName, field);
         try (ReaderSupplier rs = ReaderSupplierFactory.open(jvecFilePath)) {
             OnDiskGraphIndex index = OnDiskGraphIndex.load(rs);
 

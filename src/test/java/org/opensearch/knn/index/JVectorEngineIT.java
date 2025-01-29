@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package org.opensearch.knn;
+package org.opensearch.knn.index;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -12,20 +12,18 @@ import org.junit.After;
 import org.opensearch.client.Response;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.knn.KNNRestTestCase;
+import org.opensearch.knn.KNNResult;
+import org.opensearch.knn.TestUtils;
 import org.opensearch.knn.common.KNNConstants;
-import org.opensearch.knn.index.KNNVectorSimilarityFunction;
-import org.opensearch.knn.index.SpaceType;
-import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.engine.KNNEngine;
 import org.opensearch.test.OpenSearchIntegTestCase;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 
 import static org.opensearch.knn.common.KNNConstants.*;
 

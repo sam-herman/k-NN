@@ -118,7 +118,10 @@ public class JVectorWriter extends KnnVectorsWriter {
 
     @Override
     public void flush(int maxDoc, Sorter.DocMap sortMap) throws IOException {
+        log.info("Flushing {} fields", fields.size());
         flatVectorWriter.flush(maxDoc, sortMap);
+        log.info("flatVectorWriter flushed");
+
         for (JVectorWriter.FieldWriter<?> field : fields) {
             if (sortMap == null) {
                 writeField(field);

@@ -107,6 +107,13 @@ public class JVectorReader extends KnnVectorsReader {
 
     @Override
     public FloatVectorValues getFloatVectorValues(String field) throws IOException {
+        /*
+        final Path jvecFilePath = JVectorFormat.getVectorIndexPath(directoryBasePath, baseDataFileName, field);
+        try (ReaderSupplier rs = ReaderSupplierFactory.open(jvecFilePath)) {
+            OnDiskGraphIndex index = OnDiskGraphIndex.load(rs);
+            return new JVectorFloatVectorValues(index);
+        }
+         */
         return flatVectorsReader.getFloatVectorValues(field);
     }
 

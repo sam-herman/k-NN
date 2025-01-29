@@ -5,6 +5,7 @@
 
 package org.opensearch.knn.index.codec;
 
+import lombok.extern.log4j.Log4j2;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.KnnFloatVectorField;
 import org.apache.lucene.index.*;
@@ -18,10 +19,12 @@ import org.opensearch.knn.KNNTestCase;
 import org.opensearch.knn.index.codec.jvector.JVectorCodec;
 
 import java.io.IOException;
+import java.nio.file.Path;
 
 /**
  * Test used specifically for JVector
  */
+@Log4j2
 public class KNNJVectorTests extends LuceneTestCase {
 
     @Test
@@ -29,8 +32,12 @@ public class KNNJVectorTests extends LuceneTestCase {
         int k = 3; // The number of nearest neighbours to gather
         int totalNumberOfDocs = 10;
         IndexWriterConfig indexWriterConfig = LuceneTestCase.newIndexWriterConfig();
+        // TODO: re-enable this after fixing the compound file augmentation for JVector
+        indexWriterConfig.setUseCompoundFile(false);
         indexWriterConfig.setCodec(new JVectorCodec());
-        try (Directory dir = newDirectory();
+        final Path indexPath = createTempDir();
+        log.info("Index path: {}", indexPath);
+        try (Directory dir = newFSDirectory(indexPath);
              RandomIndexWriter w = new RandomIndexWriter(random(), dir, indexWriterConfig)) {
             // Note: even though a field was added, it doesn't participate in the formulation of the histogram
             // It's still there just to demonstrate that the histogram is formulated correctly and ignores other fields than the range field
@@ -42,6 +49,7 @@ public class KNNJVectorTests extends LuceneTestCase {
                 doc.add(new KnnFloatVectorField("test_field", source, VectorSimilarityFunction.EUCLIDEAN));
                 w.addDocument(doc);
             }
+            log.info("Flushing docs to make them discoverable on the file system");
             w.commit();
 
 

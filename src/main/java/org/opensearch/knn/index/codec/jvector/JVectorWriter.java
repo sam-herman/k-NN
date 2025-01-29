@@ -14,6 +14,7 @@ import io.github.jbellis.jvector.graph.similarity.BuildScoreProvider;
 import io.github.jbellis.jvector.vector.VectorizationProvider;
 import io.github.jbellis.jvector.vector.types.VectorFloat;
 import io.github.jbellis.jvector.vector.types.VectorTypeSupport;
+import lombok.Getter;
 import lombok.extern.log4j.Log4j2;
 import org.apache.lucene.codecs.CodecUtil;
 import org.apache.lucene.codecs.KnnFieldVectorsWriter;
@@ -22,7 +23,7 @@ import org.apache.lucene.codecs.hnsw.FlatFieldVectorsWriter;
 import org.apache.lucene.codecs.hnsw.FlatVectorsScorer;
 import org.apache.lucene.codecs.hnsw.FlatVectorsWriter;
 import org.apache.lucene.index.*;
-import org.apache.lucene.store.IndexOutput;
+import org.apache.lucene.store.*;
 import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.RamUsageEstimator;
 
@@ -46,7 +47,9 @@ public class JVectorWriter extends KnnVectorsWriter {
     private final IndexOutput meta;
     private final IndexOutput vectorIndex;
     private final String indexDataFileName;
+    private final String baseDataFileName;
     private final FlatVectorsWriter flatVectorWriter;
+    private final Path directoryBasePath;
     private boolean finished = false;
 
 
@@ -62,7 +65,19 @@ public class JVectorWriter extends KnnVectorsWriter {
                         state.segmentInfo.name,
                         state.segmentSuffix,
                         JVectorFormat.VECTOR_INDEX_EXTENSION);
+        this.baseDataFileName = state.segmentInfo.name + "_" + state.segmentSuffix;
 
+        Directory dir = state.directory;
+        while (!(dir instanceof FSDirectory)) {
+            if (dir instanceof FilterDirectory) {
+                dir = ((FilterDirectory) dir).getDelegate();
+            } else {
+                throw new IllegalArgumentException("directory must be FSDirectory or a wrapper around it");
+            }
+        }
+
+        var fsDir = (FSDirectory)dir;
+        this.directoryBasePath = fsDir.getDirectory();
 
         boolean success = false;
         try {
@@ -74,6 +89,7 @@ public class JVectorWriter extends KnnVectorsWriter {
                     JVectorFormat.VERSION_CURRENT,
                     state.segmentInfo.getId(),
                     state.segmentSuffix);
+
             CodecUtil.writeIndexHeader(
                     vectorIndex,
                     JVectorFormat.VECTOR_INDEX_CODEC_NAME,
@@ -83,7 +99,7 @@ public class JVectorWriter extends KnnVectorsWriter {
 
             success = true;
         } finally {
-            if (success == false) {
+            if (!success) {
                 IOUtils.closeWhileHandlingException(this);
             }
         }
@@ -116,7 +132,7 @@ public class JVectorWriter extends KnnVectorsWriter {
         // write graph
         long vectorIndexOffset = vectorIndex.getFilePointer();
         OnHeapGraphIndex graph = fieldData.getGraph();
-        int[][] graphLevelNodeOffsets = writeGraph(graph, fieldData.randomAccessVectorValues);
+        int[][] graphLevelNodeOffsets = writeGraph(graph, fieldData);
         long vectorIndexLength = vectorIndex.getFilePointer() - vectorIndexOffset;
 
         /*
@@ -196,13 +212,13 @@ public class JVectorWriter extends KnnVectorsWriter {
     */
 
     // TODO: implement this for proper return type
-    private int[][] writeGraph(OnHeapGraphIndex graph, RandomAccessVectorValues ravv) throws IOException {
+    private int[][] writeGraph(OnHeapGraphIndex graph, FieldWriter<?> fieldData) throws IOException {
         // TODO: use the vector index inputStream instead of this!
-        final Path jvecFilePath = Paths.get("/Users/sam.herman/projects/k-NN/build/tmp/", indexDataFileName);
+        final Path jvecFilePath = JVectorFormat.getVectorIndexPath(directoryBasePath, baseDataFileName, fieldData.fieldInfo.name);
         Files.deleteIfExists(jvecFilePath);
         Path indexPath = Files.createFile(jvecFilePath);
         log.info("Writing graph to {}", indexPath);
-        OnDiskGraphIndex.write(graph, ravv, indexPath);
+        OnDiskGraphIndex.write(graph, fieldData.randomAccessVectorValues, indexPath);
 
         return null;
     }
@@ -253,6 +269,7 @@ public class JVectorWriter extends KnnVectorsWriter {
         private static final VectorTypeSupport VECTOR_TYPE_SUPPORT = VectorizationProvider.getInstance().getVectorTypeSupport();
         private static final long SHALLOW_SIZE =
                 RamUsageEstimator.shallowSizeOfInstance(JVectorWriter.FieldWriter.class);
+        @Getter
         private final FieldInfo fieldInfo;
         private int lastDocID = -1;
         private final FlatFieldVectorsWriter<T> flatFieldVectorsWriter;

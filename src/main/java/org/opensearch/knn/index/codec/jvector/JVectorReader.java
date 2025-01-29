@@ -23,8 +23,7 @@ import org.apache.lucene.index.*;
 import org.apache.lucene.internal.hppc.IntObjectHashMap;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.KnnCollector;
-import org.apache.lucene.store.ChecksumIndexInput;
-import org.apache.lucene.store.IndexInput;
+import org.apache.lucene.store.*;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.packed.DirectMonotonicReader;
@@ -32,6 +31,7 @@ import org.apache.lucene.util.packed.DirectMonotonicReader;
 import io.github.jbellis.jvector.disk.ReaderSupplierFactory;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
@@ -45,14 +45,30 @@ public class JVectorReader extends KnnVectorsReader {
     final FlatVectorsReader flatVectorsReader;
     private final FieldInfos fieldInfos;
     private final String indexDataFileName;
+    private final String baseDataFileName;
+    private final Path directoryBasePath;
     //private final IntObjectHashMap<JVectorReader.FieldEntry> fields;
 
     public JVectorReader(SegmentReadState state, FlatVectorsReader flatVectorsReader) throws IOException {
         this.flatVectorsReader = flatVectorsReader;
         this.fieldInfos = state.fieldInfos;
+        this.baseDataFileName = state.segmentInfo.name + "_" + state.segmentSuffix;
         String metaFileName =
                 IndexFileNames.segmentFileName(
                         state.segmentInfo.name, state.segmentSuffix, JVectorFormat.META_EXTENSION);
+
+        Directory dir = state.directory;
+        while (!(dir instanceof FSDirectory)) {
+            if (dir instanceof FilterDirectory) {
+                dir = ((FilterDirectory) dir).getDelegate();
+            } else {
+                throw new IllegalArgumentException("directory must be FSDirectory or a wrapper around it");
+            }
+        }
+
+        var fsDir = (FSDirectory)dir;
+        this.directoryBasePath = fsDir.getDirectory();
+
         boolean success = false;
         try (ChecksumIndexInput meta = state.directory.openChecksumInput(metaFileName, state.context)) {
             CodecUtil.checkIndexHeader(
@@ -112,7 +128,8 @@ public class JVectorReader extends KnnVectorsReader {
 
         // on-disk indexes require a ReaderSupplier (not just a Reader) because we will want it to
         // open additional readers for searching
-        try (ReaderSupplier rs = ReaderSupplierFactory.open(Paths.get("/Users/sam.herman/projects/k-NN/build/tmp/", indexDataFileName))) {
+        final Path jvecFilePath = JVectorFormat.getVectorIndexPath(directoryBasePath, baseDataFileName, field);
+        try (ReaderSupplier rs = ReaderSupplierFactory.open(jvecFilePath)) {
             OnDiskGraphIndex index = OnDiskGraphIndex.load(rs);
 
             // search for a random vector using a GraphSearcher and SearchScoreProvider

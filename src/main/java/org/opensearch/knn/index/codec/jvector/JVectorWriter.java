@@ -50,24 +50,25 @@ public class JVectorWriter extends KnnVectorsWriter {
     private final String baseDataFileName;
     private final FlatVectorsWriter flatVectorWriter;
     private final Path directoryBasePath;
+    private final SegmentWriteState segmentWriteState;
     private boolean finished = false;
 
 
-    public JVectorWriter(SegmentWriteState state, FlatVectorsWriter flatVectorWriter) throws IOException {
+    public JVectorWriter(SegmentWriteState segmentWriteState, FlatVectorsWriter flatVectorWriter) throws IOException {
         this.flatVectorWriter = flatVectorWriter;
-
+        this.segmentWriteState = segmentWriteState;
         String metaFileName =
                 IndexFileNames.segmentFileName(
-                        state.segmentInfo.name, state.segmentSuffix, JVectorFormat.META_EXTENSION);
+                        segmentWriteState.segmentInfo.name, segmentWriteState.segmentSuffix, JVectorFormat.META_EXTENSION);
 
         this.indexDataFileName =
                 IndexFileNames.segmentFileName(
-                        state.segmentInfo.name,
-                        state.segmentSuffix,
+                        segmentWriteState.segmentInfo.name,
+                        segmentWriteState.segmentSuffix,
                         JVectorFormat.VECTOR_INDEX_EXTENSION);
-        this.baseDataFileName = state.segmentInfo.name + "_" + state.segmentSuffix;
+        this.baseDataFileName = segmentWriteState.segmentInfo.name + "_" + segmentWriteState.segmentSuffix;
 
-        Directory dir = state.directory;
+        Directory dir = segmentWriteState.directory;
         while (!(dir instanceof FSDirectory)) {
             if (dir instanceof FilterDirectory) {
                 dir = ((FilterDirectory) dir).getDelegate();
@@ -81,21 +82,21 @@ public class JVectorWriter extends KnnVectorsWriter {
 
         boolean success = false;
         try {
-            meta = state.directory.createOutput(metaFileName, state.context);
-            vectorIndex = state.directory.createOutput(indexDataFileName, state.context);
+            meta = segmentWriteState.directory.createOutput(metaFileName, segmentWriteState.context);
+            vectorIndex = segmentWriteState.directory.createOutput(indexDataFileName, segmentWriteState.context);
             CodecUtil.writeIndexHeader(
                     meta,
                     JVectorFormat.META_CODEC_NAME,
                     JVectorFormat.VERSION_CURRENT,
-                    state.segmentInfo.getId(),
-                    state.segmentSuffix);
+                    segmentWriteState.segmentInfo.getId(),
+                    segmentWriteState.segmentSuffix);
 
             CodecUtil.writeIndexHeader(
                     vectorIndex,
                     JVectorFormat.VECTOR_INDEX_CODEC_NAME,
                     JVectorFormat.VERSION_CURRENT,
-                    state.segmentInfo.getId(),
-                    state.segmentSuffix);
+                    segmentWriteState.segmentInfo.getId(),
+                    segmentWriteState.segmentSuffix);
 
             success = true;
         } finally {
@@ -215,7 +216,12 @@ public class JVectorWriter extends KnnVectorsWriter {
     private int[][] writeGraph(OnHeapGraphIndex graph, FieldWriter<?> fieldData) throws IOException {
         // TODO: use the vector index inputStream instead of this!
         final Path jvecFilePath = JVectorFormat.getVectorIndexPath(directoryBasePath, baseDataFileName, fieldData.fieldInfo.name);
+        /** This is an ugly hack to make sure Lucene actually knows about our input stream files, otherwise it will delete them */
+        IndexOutput indexOutput = segmentWriteState.directory.createOutput(jvecFilePath.getFileName().toString(), segmentWriteState.context);
+        indexOutput.close();
         Files.deleteIfExists(jvecFilePath);
+        /** End of ugly hack */
+
         Path indexPath = Files.createFile(jvecFilePath);
         log.info("Writing graph to {}", indexPath);
         OnDiskGraphIndex.write(graph, fieldData.randomAccessVectorValues, indexPath);

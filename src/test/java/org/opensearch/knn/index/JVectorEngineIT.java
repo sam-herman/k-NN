@@ -10,6 +10,7 @@ import com.google.common.collect.ImmutableMap;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.junit.After;
 import org.opensearch.client.Response;
+import org.opensearch.common.settings.Settings;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.knn.KNNRestTestCase;
@@ -25,6 +26,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.function.Function;
 
+import static org.opensearch.index.engine.EngineConfig.INDEX_USE_COMPOUND_FILE;
 import static org.opensearch.knn.common.KNNConstants.*;
 
 @OpenSearchIntegTestCase.ClusterScope(numDataNodes = 1)
@@ -107,8 +109,12 @@ public class JVectorEngineIT extends KNNRestTestCase {
 
         Map<String, Object> mappingMap = xContentBuilderToMap(builder);
         String mapping = builder.toString();
+        Settings indexSettings = getDefaultIndexSettings();
+        /* For now we will disable compound file to make it easier to read the index files */
+        // TODO: Enable compound file once we have a way to read it with jVector files
+        indexSettings = Settings.builder().put(indexSettings).put(INDEX_USE_COMPOUND_FILE.getKey(), false).build();
 
-        createKnnIndex(INDEX_NAME, mapping);
+        createKnnIndex(INDEX_NAME, indexSettings, mapping);
         assertEquals(new TreeMap<>(mappingMap), new TreeMap<>(getIndexMappingAsMap(INDEX_NAME)));
 
         Float[] vector = new Float[] { 2.0f, 4.5f, 6.5f };
@@ -140,7 +146,9 @@ public class JVectorEngineIT extends KNNRestTestCase {
             .endObject();
 
         String mapping = builder.toString();
-        createKnnIndex(INDEX_NAME, mapping);
+        Settings indexSettings = getDefaultIndexSettings();
+        indexSettings = Settings.builder().put(indexSettings).put(INDEX_USE_COMPOUND_FILE.getKey(), false).build();
+        createKnnIndex(INDEX_NAME, indexSettings, mapping);
     }
 
     private void baseQueryTest(SpaceType spaceType) throws Exception {

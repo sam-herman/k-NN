@@ -32,6 +32,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -116,6 +117,16 @@ public class JVectorWriter extends KnnVectorsWriter {
                         segmentWriteState);
         fields.add(newField);
         return newField;
+    }
+
+    @Override
+    public void mergeOneField(FieldInfo fieldInfo, MergeState mergeState) throws IOException {
+        //super.mergeOneField(fieldInfo, mergeState);
+        log.info("Merging field {} in segment {}", fieldInfo.name, segmentWriteState.segmentInfo.name);
+        //flatVectorWriter.mergeOneField(fieldInfo, mergeState);
+        var scorerSupplier = flatVectorWriter.mergeOneFieldToIndex(fieldInfo, mergeState);
+        //IOUtils.close(scorerSupplier);
+        IOUtils.closeWhileHandlingException(scorerSupplier);
     }
 
     @Override

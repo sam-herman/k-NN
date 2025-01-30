@@ -108,10 +108,12 @@ public class JVectorWriter extends KnnVectorsWriter {
 
     @Override
     public KnnFieldVectorsWriter<?> addField(FieldInfo fieldInfo) throws IOException {
+        log.info("Adding field {} in segment {}", fieldInfo.name, segmentWriteState.segmentInfo.name);
         JVectorWriter.FieldWriter<?> newField =
                 JVectorWriter.FieldWriter.create(flatVectorWriter.getFlatVectorScorer(),
                         flatVectorWriter.addField(fieldInfo),
-                        fieldInfo);
+                        fieldInfo,
+                        segmentWriteState);
         fields.add(newField);
         return newField;
     }
@@ -284,6 +286,7 @@ public class JVectorWriter extends KnnVectorsWriter {
         private final FlatFieldVectorsWriter<T> flatFieldVectorsWriter;
         private GraphIndexBuilder graphIndexBuilder;
         private final List<VectorFloat<?>> floatVectors = new ArrayList<>();
+        private final String segmentName;
         RandomAccessVectorValues randomAccessVectorValues;
 
 
@@ -291,19 +294,22 @@ public class JVectorWriter extends KnnVectorsWriter {
         static FieldWriter<?> create(
                 FlatVectorsScorer scorer,
                 FlatFieldVectorsWriter<?> flatFieldVectorsWriter,
-                FieldInfo fieldInfo)
+                FieldInfo fieldInfo,
+                SegmentWriteState segmentWriteState)
                 throws IOException {
             switch (fieldInfo.getVectorEncoding()) {
                 case BYTE:
                     return new FieldWriter<>(
                         scorer,
                         (FlatFieldVectorsWriter<byte[]>) flatFieldVectorsWriter,
-                        fieldInfo);
+                        fieldInfo,
+                        segmentWriteState.segmentInfo.name);
                 case FLOAT32:
                     return new FieldWriter<>(
                         scorer,
                         (FlatFieldVectorsWriter<float[]>) flatFieldVectorsWriter,
-                        fieldInfo);
+                        fieldInfo,
+                        segmentWriteState.segmentInfo.name);
                 default:
                     throw new IllegalArgumentException("Unsupported vector encoding: " + fieldInfo.getVectorEncoding());
             }
@@ -312,13 +318,16 @@ public class JVectorWriter extends KnnVectorsWriter {
         FieldWriter(
                 FlatVectorsScorer scorer,
                 FlatFieldVectorsWriter<T> flatFieldVectorsWriter,
-                FieldInfo fieldInfo) {
+                FieldInfo fieldInfo,
+                String segmentName) {
             this.fieldInfo = fieldInfo;
             this.flatFieldVectorsWriter = Objects.requireNonNull(flatFieldVectorsWriter);
+            this.segmentName = segmentName;
         }
 
         @Override
         public void addValue(int docID, T vectorValue) throws IOException {
+            log.info("Adding value {} to field {} in segment {}", vectorValue, fieldInfo.name, segmentName);
             if (docID == lastDocID) {
                 throw new IllegalArgumentException(
                         "VectorValuesField \""
@@ -338,7 +347,7 @@ public class JVectorWriter extends KnnVectorsWriter {
 
         @Override
         public T copyValue(T vectorValue) {
-            return null;
+            throw new UnsupportedOperationException("copyValue not supported");
         }
 
         @Override

@@ -52,7 +52,7 @@ public class KNNJVectorTests extends LuceneTestCase {
         // TODO: re-enable this after fixing the compound file augmentation for JVector
         indexWriterConfig.setUseCompoundFile(false);
         indexWriterConfig.setCodec(new JVectorCodec());
-        indexWriterConfig.setMergePolicy(NoMergePolicy.INSTANCE);
+        indexWriterConfig.setMergePolicy(new ForceMergesOnlyMergePolicy());
         final Path indexPath = createTempDir();
         log.info("Index path: {}", indexPath);
         try (Directory dir = newFSDirectory(indexPath);
@@ -105,7 +105,7 @@ public class KNNJVectorTests extends LuceneTestCase {
         // TODO: re-enable this after fixing the compound file augmentation for JVector
         indexWriterConfig.setUseCompoundFile(false);
         indexWriterConfig.setCodec(new JVectorCodec());
-        indexWriterConfig.setMergePolicy(NoMergePolicy.INSTANCE);
+        indexWriterConfig.setMergePolicy(new ForceMergesOnlyMergePolicy());
         final Path indexPath = createTempDir();
         log.info("Index path: {}", indexPath);
         try (Directory dir = newFSDirectory(indexPath);
@@ -157,6 +157,7 @@ public class KNNJVectorTests extends LuceneTestCase {
         indexWriterConfig.setUseCompoundFile(false);
         indexWriterConfig.setCodec(new JVectorCodec());
         indexWriterConfig.setMergePolicy(new ForceMergesOnlyMergePolicy());
+        indexWriterConfig.setMergeScheduler(new SerialMergeScheduler());
         final Path indexPath = createTempDir();
         log.info("Index path: {}", indexPath);
         try (FSDirectory dir = new NIOFSDirectory(indexPath, FSLockFactory.getDefault());
@@ -167,7 +168,7 @@ public class KNNJVectorTests extends LuceneTestCase {
                 final Document doc = new Document();
                 doc.add(new KnnFloatVectorField("test_field", source, VectorSimilarityFunction.EUCLIDEAN));
                 w.addDocument(doc);
-                w.flush(); // this creates a new segment without triggering a merge
+                w.commit(); // this creates a new segment without triggering a merge
             }
             log.info("Done writing all files to the file system");
 

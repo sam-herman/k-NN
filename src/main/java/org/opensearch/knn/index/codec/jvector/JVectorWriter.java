@@ -23,6 +23,7 @@ import org.apache.lucene.codecs.hnsw.FlatFieldVectorsWriter;
 import org.apache.lucene.codecs.hnsw.FlatVectorsScorer;
 import org.apache.lucene.codecs.hnsw.FlatVectorsWriter;
 import org.apache.lucene.index.*;
+import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.store.*;
 import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.RamUsageEstimator;
@@ -121,12 +122,46 @@ public class JVectorWriter extends KnnVectorsWriter {
 
     @Override
     public void mergeOneField(FieldInfo fieldInfo, MergeState mergeState) throws IOException {
-        //super.mergeOneField(fieldInfo, mergeState);
+        super.mergeOneField(fieldInfo, mergeState);
         log.info("Merging field {} in segment {}", fieldInfo.name, segmentWriteState.segmentInfo.name);
         //flatVectorWriter.mergeOneField(fieldInfo, mergeState);
         var scorerSupplier = flatVectorWriter.mergeOneFieldToIndex(fieldInfo, mergeState);
-        //IOUtils.close(scorerSupplier);
-        IOUtils.closeWhileHandlingException(scorerSupplier);
+        var success = false;
+        try {
+            switch (fieldInfo.getVectorEncoding()) {
+                case BYTE:
+                    var byteWriter =
+                            (JVectorWriter.FieldWriter<byte[]>) addField(fieldInfo);
+                    ByteVectorValues mergedBytes =
+                            MergedVectorValues.mergeByteVectorValues(fieldInfo, mergeState);
+                    for (int doc = mergedBytes.nextDoc();
+                         doc != DocIdSetIterator.NO_MORE_DOCS;
+                         doc = mergedBytes.nextDoc()) {
+                        byteWriter.addValue(doc, mergedBytes.vectorValue());
+                    }
+                    writeField(byteWriter);
+                    break;
+                case FLOAT32:
+                    var floatVectorFieldWriter =
+                            (JVectorWriter.FieldWriter<float[]>) addField(fieldInfo);
+                    FloatVectorValues mergedFloats =
+                            MergedVectorValues.mergeFloatVectorValues(fieldInfo, mergeState);
+                    for (int doc = mergedFloats.nextDoc();
+                         doc != DocIdSetIterator.NO_MORE_DOCS;
+                         doc = mergedFloats.nextDoc()) {
+                        floatVectorFieldWriter.addValue(doc, mergedFloats.vectorValue());
+                    }
+                    writeField(floatVectorFieldWriter);
+                    break;
+            }
+            success = true;
+        } finally {
+            if (success) {
+                IOUtils.close(scorerSupplier);
+            } else {
+                IOUtils.closeWhileHandlingException(scorerSupplier);
+            }
+        }
     }
 
     @Override

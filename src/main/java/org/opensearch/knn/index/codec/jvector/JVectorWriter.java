@@ -9,7 +9,7 @@ import io.github.jbellis.jvector.graph.GraphIndexBuilder;
 import io.github.jbellis.jvector.graph.ListRandomAccessVectorValues;
 import io.github.jbellis.jvector.graph.OnHeapGraphIndex;
 import io.github.jbellis.jvector.graph.RandomAccessVectorValues;
-import io.github.jbellis.jvector.graph.disk.OnDiskGraphIndex;
+import io.github.jbellis.jvector.graph.disk.*;
 import io.github.jbellis.jvector.graph.similarity.BuildScoreProvider;
 import io.github.jbellis.jvector.vector.VectorizationProvider;
 import io.github.jbellis.jvector.vector.types.VectorFloat;
@@ -32,10 +32,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 
 import static org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsReader.SIMILARITY_FUNCTIONS;
 
@@ -50,14 +47,12 @@ public class JVectorWriter extends KnnVectorsWriter {
     private final IndexOutput vectorIndex;
     private final String indexDataFileName;
     private final String baseDataFileName;
-    private final FlatVectorsWriter flatVectorWriter;
     private final Path directoryBasePath;
     private final SegmentWriteState segmentWriteState;
     private boolean finished = false;
 
 
     public JVectorWriter(SegmentWriteState segmentWriteState, FlatVectorsWriter flatVectorWriter) throws IOException {
-        this.flatVectorWriter = flatVectorWriter;
         this.segmentWriteState = segmentWriteState;
         String metaFileName =
                 IndexFileNames.segmentFileName(
@@ -112,8 +107,7 @@ public class JVectorWriter extends KnnVectorsWriter {
     public KnnFieldVectorsWriter<?> addField(FieldInfo fieldInfo) throws IOException {
         log.info("Adding field {} in segment {}", fieldInfo.name, segmentWriteState.segmentInfo.name);
         JVectorWriter.FieldWriter<?> newField =
-                JVectorWriter.FieldWriter.create(flatVectorWriter.getFlatVectorScorer(),
-                        flatVectorWriter.addField(fieldInfo),
+                JVectorWriter.FieldWriter.create(
                         fieldInfo,
                         segmentWriteState);
         fields.add(newField);
@@ -122,10 +116,10 @@ public class JVectorWriter extends KnnVectorsWriter {
 
     @Override
     public void mergeOneField(FieldInfo fieldInfo, MergeState mergeState) throws IOException {
-        super.mergeOneField(fieldInfo, mergeState);
-        log.info("Merging field {} in segment {}", fieldInfo.name, segmentWriteState.segmentInfo.name);
+        //super.mergeOneField(fieldInfo, mergeState);
+        log.info("Merging field {} into segment {}", fieldInfo.name, segmentWriteState.segmentInfo.name);
         //flatVectorWriter.mergeOneField(fieldInfo, mergeState);
-        var scorerSupplier = flatVectorWriter.mergeOneFieldToIndex(fieldInfo, mergeState);
+        //var scorerSupplier = flatVectorWriter.mergeOneFieldToIndex(fieldInfo, mergeState);
         var success = false;
         try {
             switch (fieldInfo.getVectorEncoding()) {
@@ -144,22 +138,31 @@ public class JVectorWriter extends KnnVectorsWriter {
                 case FLOAT32:
                     var floatVectorFieldWriter =
                             (JVectorWriter.FieldWriter<float[]>) addField(fieldInfo);
-                    FloatVectorValues mergedFloats =
-                            MergedVectorValues.mergeFloatVectorValues(fieldInfo, mergeState);
-                    for (int doc = mergedFloats.nextDoc();
-                         doc != DocIdSetIterator.NO_MORE_DOCS;
-                         doc = mergedFloats.nextDoc()) {
-                        floatVectorFieldWriter.addValue(doc, mergedFloats.vectorValue());
+                    int baseDocId = 0;
+                    for (int i = 0; i < mergeState.knnVectorsReaders.length; i++) {
+                        FloatVectorValues floatVectorValues = mergeState.knnVectorsReaders[i].getFloatVectorValues(fieldInfo.name);
+                        var floatVectors = new ArrayList<float[]>();
+                        for (int doc = floatVectorValues.nextDoc();
+                             doc != DocIdSetIterator.NO_MORE_DOCS;
+                             doc = floatVectorValues.nextDoc()) {
+                            floatVectors.add(floatVectorValues.vectorValue());
+                        }
+                        for (int doc = 0; doc < floatVectors.size(); doc++) {
+                            floatVectorFieldWriter.addValue(baseDocId + doc, floatVectors.get(doc));
+                        }
+
+                        baseDocId += floatVectorValues.size();
                     }
                     writeField(floatVectorFieldWriter);
                     break;
             }
             success = true;
+            log.info("Completed Merge field {} into segment {}", fieldInfo.name, segmentWriteState.segmentInfo.name);
         } finally {
             if (success) {
-                IOUtils.close(scorerSupplier);
+                //IOUtils.close(scorerSupplier);
             } else {
-                IOUtils.closeWhileHandlingException(scorerSupplier);
+                //IOUtils.closeWhileHandlingException(scorerSupplier);
             }
         }
     }
@@ -167,8 +170,6 @@ public class JVectorWriter extends KnnVectorsWriter {
     @Override
     public void flush(int maxDoc, Sorter.DocMap sortMap) throws IOException {
         log.info("Flushing {} fields", fields.size());
-        flatVectorWriter.flush(maxDoc, sortMap);
-        log.info("flatVectorWriter flushed");
 
         for (JVectorWriter.FieldWriter<?> field : fields) {
             if (sortMap == null) {
@@ -182,10 +183,10 @@ public class JVectorWriter extends KnnVectorsWriter {
 
     private void writeField(JVectorWriter.FieldWriter<?> fieldData) throws IOException {
         // write graph
-        long vectorIndexOffset = vectorIndex.getFilePointer();
+        //long vectorIndexOffset = vectorIndex.getFilePointer();
         OnHeapGraphIndex graph = fieldData.getGraph();
         int[][] graphLevelNodeOffsets = writeGraph(graph, fieldData);
-        long vectorIndexLength = vectorIndex.getFilePointer() - vectorIndexOffset;
+        //long vectorIndexLength = vectorIndex.getFilePointer() - vectorIndexOffset;
 
         /*
         writeMeta(
@@ -276,7 +277,17 @@ public class JVectorWriter extends KnnVectorsWriter {
         Path indexPath = Files.createFile(jvecFilePath);
         log.info("Writing graph to {}", indexPath);
         OnDiskGraphIndex.write(graph, fieldData.randomAccessVectorValues, indexPath);
+        /*
+        try (var writer = new OnDiskGraphIndexWriter.Builder(graph, indexPath)
+                .with(new InlineVectors(fieldData.randomAccessVectorValues.dimension()))
+                .build())
+        {
+            var suppliers = Feature.singleStateFactory(FeatureId.INLINE_VECTORS,
+                    nodeId -> new InlineVectors.State(fieldData.randomAccessVectorValues.getVector(nodeId)));
+            writer.write(suppliers);
+        }
 
+         */
         return null;
     }
 
@@ -295,7 +306,6 @@ public class JVectorWriter extends KnnVectorsWriter {
             throw new IllegalStateException("already finished");
         }
         finished = true;
-        flatVectorWriter.finish();
 
         if (meta != null) {
             // write end of fields marker
@@ -309,7 +319,7 @@ public class JVectorWriter extends KnnVectorsWriter {
 
     @Override
     public void close() throws IOException {
-        IOUtils.close(meta, vectorIndex, flatVectorWriter);
+        IOUtils.close(meta, vectorIndex);
     }
 
     @Override
@@ -329,31 +339,25 @@ public class JVectorWriter extends KnnVectorsWriter {
         @Getter
         private final FieldInfo fieldInfo;
         private int lastDocID = -1;
-        private final FlatFieldVectorsWriter<T> flatFieldVectorsWriter;
         private GraphIndexBuilder graphIndexBuilder;
         private final List<VectorFloat<?>> floatVectors = new ArrayList<>();
         private final String segmentName;
-        RandomAccessVectorValues randomAccessVectorValues;
+        private final RandomAccessVectorValues randomAccessVectorValues;
+        private final BuildScoreProvider buildScoreProvider;
 
 
 
         static FieldWriter<?> create(
-                FlatVectorsScorer scorer,
-                FlatFieldVectorsWriter<?> flatFieldVectorsWriter,
                 FieldInfo fieldInfo,
                 SegmentWriteState segmentWriteState)
                 throws IOException {
             switch (fieldInfo.getVectorEncoding()) {
                 case BYTE:
                     return new FieldWriter<>(
-                        scorer,
-                        (FlatFieldVectorsWriter<byte[]>) flatFieldVectorsWriter,
                         fieldInfo,
                         segmentWriteState.segmentInfo.name);
                 case FLOAT32:
                     return new FieldWriter<>(
-                        scorer,
-                        (FlatFieldVectorsWriter<float[]>) flatFieldVectorsWriter,
                         fieldInfo,
                         segmentWriteState.segmentInfo.name);
                 default:
@@ -362,32 +366,35 @@ public class JVectorWriter extends KnnVectorsWriter {
         }
 
         FieldWriter(
-                FlatVectorsScorer scorer,
-                FlatFieldVectorsWriter<T> flatFieldVectorsWriter,
                 FieldInfo fieldInfo,
                 String segmentName) {
             this.fieldInfo = fieldInfo;
-            this.flatFieldVectorsWriter = Objects.requireNonNull(flatFieldVectorsWriter);
             this.segmentName = segmentName;
+            var originalDimension = fieldInfo.getVectorDimension();
+            this.randomAccessVectorValues = new ListRandomAccessVectorValues(floatVectors, originalDimension);
+            this.buildScoreProvider = BuildScoreProvider.randomAccessScoreProvider(randomAccessVectorValues, getVectorSimilarityFunction(fieldInfo));
+            this.graphIndexBuilder = new GraphIndexBuilder(buildScoreProvider,
+                    randomAccessVectorValues.dimension(),
+                    16, // graph degree
+                    100, // construction search depth
+                    1.2f, // allow degree overflow during construction by this factor
+                    1.2f);
         }
 
         @Override
         public void addValue(int docID, T vectorValue) throws IOException {
-            log.info("Adding value {} to field {} in segment {}", vectorValue, fieldInfo.name, segmentName);
+            log.debug("Adding value {} to field {} in segment {}", vectorValue, fieldInfo.name, segmentName);
             if (docID == lastDocID) {
                 throw new IllegalArgumentException(
                         "VectorValuesField \""
                                 + fieldInfo.name
                                 + "\" appears more than once in this document (only one value is allowed per field)");
             }
-            floatVectors.add(VECTOR_TYPE_SUPPORT.createFloatVector(vectorValue));
-            flatFieldVectorsWriter.addValue(docID, vectorValue);
-            /*
             var floats = (float[]) vectorValue;
             var vector = (VECTOR_TYPE_SUPPORT.createFloatVector(floats));
+            floatVectors.add(vector);
             graphIndexBuilder.addGraphNode(docID, vector);
 
-             */
             lastDocID = docID;
         }
 
@@ -399,8 +406,7 @@ public class JVectorWriter extends KnnVectorsWriter {
         @Override
         public long ramBytesUsed() {
             return SHALLOW_SIZE
-                    + flatFieldVectorsWriter.ramBytesUsed()
-                    + (Objects.isNull(graphIndexBuilder) ?  0 : graphIndexBuilder.getGraph().ramBytesUsed());
+                    + graphIndexBuilder.getGraph().ramBytesUsed();
         }
 
         static io.github.jbellis.jvector.vector.VectorSimilarityFunction getVectorSimilarityFunction(FieldInfo fieldInfo) {
@@ -420,35 +426,7 @@ public class JVectorWriter extends KnnVectorsWriter {
          * @throws IOException IOException
          */
         public OnHeapGraphIndex getGraph() throws IOException {
-            final BuildScoreProvider bsp;
-            switch (fieldInfo.getVectorEncoding()) {
-                case BYTE:
-                        /*
-                        * TODO: Does JVector support ByteVectorValues?
-                        scorer.getRandomVectorScorerSupplier(
-                                fieldInfo.getVectorSimilarityFunction(),
-
-                                ByteVectorValues.fromBytes(
-                                        (List<byte[]>) flatFieldVectorsWriter.getVectors(),
-                                        fieldInfo.getVectorDimension()));
-                        */
-                    throw new UnsupportedOperationException("ByteVectorValues not supported yet");
-                case FLOAT32:
-                    var originalDimension = fieldInfo.getVectorDimension();
-                    randomAccessVectorValues = new ListRandomAccessVectorValues(floatVectors, originalDimension);
-                    bsp = BuildScoreProvider.randomAccessScoreProvider(randomAccessVectorValues, getVectorSimilarityFunction(fieldInfo));
-                    break;
-                default:
-                    throw new IllegalArgumentException("Unsupported vector encoding: " + fieldInfo.getVectorEncoding());
-
-            }
-            this.graphIndexBuilder = new GraphIndexBuilder(bsp,
-                    randomAccessVectorValues.dimension(),
-                    16, // graph degree
-                    100, // construction search depth
-                    1.2f, // allow degree overflow during construction by this factor
-                    1.2f);
-            return graphIndexBuilder.build(randomAccessVectorValues);
+            return graphIndexBuilder.getGraph();
         }
     }
 }

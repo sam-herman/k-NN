@@ -5,6 +5,8 @@
 
 package org.opensearch.knn.index.codec.jvector;
 
+import io.github.jbellis.jvector.disk.ReaderSupplier;
+import io.github.jbellis.jvector.disk.ReaderSupplierFactory;
 import io.github.jbellis.jvector.graph.NodesIterator;
 import io.github.jbellis.jvector.graph.disk.OnDiskGraphIndex;
 import io.github.jbellis.jvector.vector.types.VectorFloat;
@@ -12,15 +14,18 @@ import org.apache.lucene.index.FloatVectorValues;
 import org.apache.lucene.search.VectorScorer;
 
 import java.io.IOException;
+import java.nio.file.Path;
 
 public class JVectorFloatVectorValues extends FloatVectorValues {
     private final OnDiskGraphIndex onDiskGraphIndex;
     private final OnDiskGraphIndex.View view;
     private int docId = -1;
     private final NodesIterator nodesIterator;
+    private final ReaderSupplier readerSupplier;
 
-    public JVectorFloatVectorValues(OnDiskGraphIndex onDiskGraphIndex) throws IOException {
-        this.onDiskGraphIndex = onDiskGraphIndex;
+    public JVectorFloatVectorValues(Path jvecFilePath) throws IOException {
+        this.readerSupplier = ReaderSupplierFactory.open(jvecFilePath);
+        this.onDiskGraphIndex = OnDiskGraphIndex.load(readerSupplier);
         this.view = onDiskGraphIndex.getView();
         this.nodesIterator = onDiskGraphIndex.getNodes();
     }
@@ -61,7 +66,12 @@ public class JVectorFloatVectorValues extends FloatVectorValues {
 
     @Override
     public int nextDoc() throws IOException {
-        docId = nodesIterator.next();
+        if (nodesIterator.hasNext()) {
+            docId = nodesIterator.next();
+        } else {
+            docId = NO_MORE_DOCS;
+        }
+
         return docId;
     }
 

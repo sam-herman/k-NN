@@ -27,8 +27,6 @@ public class JVectorFormat extends KnnVectorsFormat {
     public static final int VERSION_CURRENT = VERSION_START;
     public static final int DIRECT_MONOTONIC_BLOCK_SHIFT = 16;
 
-    private static final FlatVectorsFormat flatVectorsFormat =
-            new Lucene99FlatVectorsFormat(FlatVectorScorerUtil.getLucene99FlatVectorsScorer());
     public JVectorFormat() {
         this(NAME);
     }
@@ -44,12 +42,12 @@ public class JVectorFormat extends KnnVectorsFormat {
 
     @Override
     public KnnVectorsWriter fieldsWriter(SegmentWriteState state) throws IOException {
-        return new JVectorWriter(state, flatVectorsFormat.fieldsWriter(state));
+        return new JVectorWriter(state, null);
     }
 
     @Override
     public KnnVectorsReader fieldsReader(SegmentReadState state) throws IOException {
-        return new JVectorReader(state, flatVectorsFormat.fieldsReader(state));
+        return new JVectorReader(state, null);
     }
 
     static Path getVectorIndexPath(Path directoryBasePath, String baseDataFileName, String field) {

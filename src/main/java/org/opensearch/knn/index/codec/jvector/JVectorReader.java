@@ -45,7 +45,6 @@ import static org.opensearch.knn.index.codec.jvector.JVectorWriter.FieldWriter.g
 public class JVectorReader extends KnnVectorsReader {
     private static final VectorTypeSupport VECTOR_TYPE_SUPPORT = VectorizationProvider.getInstance().getVectorTypeSupport();
 
-    final FlatVectorsReader flatVectorsReader;
     private final FieldInfos fieldInfos;
     private final String indexDataFileName;
     private final String baseDataFileName;
@@ -53,7 +52,6 @@ public class JVectorReader extends KnnVectorsReader {
     //private final IntObjectHashMap<JVectorReader.FieldEntry> fields;
 
     public JVectorReader(SegmentReadState state, FlatVectorsReader flatVectorsReader) throws IOException {
-        this.flatVectorsReader = flatVectorsReader;
         this.fieldInfos = state.fieldInfos;
         this.baseDataFileName = state.segmentInfo.name + "_" + state.segmentSuffix;
         String metaFileName =
@@ -100,26 +98,21 @@ public class JVectorReader extends KnnVectorsReader {
 
     @Override
     public void checkIntegrity() throws IOException {
-        flatVectorsReader.checkIntegrity();
         // TODO: Implement this, for now this will always pass
         //CodecUtil.checksumEntireFile(vectorIndex);
     }
 
     @Override
     public FloatVectorValues getFloatVectorValues(String field) throws IOException {
-        /*
+
         final Path jvecFilePath = JVectorFormat.getVectorIndexPath(directoryBasePath, baseDataFileName, field);
-        try (ReaderSupplier rs = ReaderSupplierFactory.open(jvecFilePath)) {
-            OnDiskGraphIndex index = OnDiskGraphIndex.load(rs);
-            return new JVectorFloatVectorValues(index);
-        }
-         */
-        return flatVectorsReader.getFloatVectorValues(field);
+        return new JVectorFloatVectorValues(jvecFilePath);
     }
 
     @Override
     public ByteVectorValues getByteVectorValues(String field) throws IOException {
-        return flatVectorsReader.getByteVectorValues(field);
+        //return flatVectorsReader.getByteVectorValues(field);
+        return null;
     }
 
     @Override
@@ -164,7 +157,6 @@ public class JVectorReader extends KnnVectorsReader {
 
     @Override
     public void close() throws IOException {
-        IOUtils.close(flatVectorsReader);
         // TODO: also close the vectorIndex
         //IOUtils.close(vectorIndex);
     }

@@ -12,6 +12,17 @@ import java.util.List;
 import java.util.Map;
 
 public class ForceMergesOnlyMergePolicy extends MergePolicy {
+    private final boolean useCompoundFile;
+
+    public ForceMergesOnlyMergePolicy() {
+        this(false);
+    }
+
+    public ForceMergesOnlyMergePolicy(boolean useCompoundFile) {
+        super();
+        this.useCompoundFile = useCompoundFile;
+    }
+
     @Override
     public MergeSpecification findMerges(MergeTrigger mergeTrigger, SegmentInfos segmentInfos, MergeContext mergeContext) throws IOException {
         return null;
@@ -37,7 +48,7 @@ public class ForceMergesOnlyMergePolicy extends MergePolicy {
 
     @Override
     public boolean useCompoundFile(SegmentInfos segmentInfos, SegmentCommitInfo newSegment, MergeContext mergeContext) throws IOException {
-        return false;
+        return useCompoundFile;
     }
 
     @Override

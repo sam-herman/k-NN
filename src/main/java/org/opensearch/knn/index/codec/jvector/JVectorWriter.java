@@ -52,7 +52,7 @@ public class JVectorWriter extends KnnVectorsWriter {
     private boolean finished = false;
 
 
-    public JVectorWriter(SegmentWriteState segmentWriteState, FlatVectorsWriter flatVectorWriter) throws IOException {
+    public JVectorWriter(SegmentWriteState segmentWriteState) throws IOException {
         this.segmentWriteState = segmentWriteState;
         String metaFileName =
                 IndexFileNames.segmentFileName(

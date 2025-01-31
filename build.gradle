@@ -368,6 +368,8 @@ test {
     dependsOn buildJniLib
     systemProperty 'tests.security.manager', 'false'
     systemProperty "java.library.path", "$rootDir/jni/release"
+    systemProperty 'log4j.configurationFile', "$rootDir/src/test/resources/log4j2.properties"
+
     //this change enables mockito-inline that supports mocking of static classes/calls
     systemProperty "jdk.attach.allowAttachSelf", true
     if (Os.isFamily(Os.FAMILY_WINDOWS)) {

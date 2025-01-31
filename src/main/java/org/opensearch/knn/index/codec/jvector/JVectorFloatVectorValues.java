@@ -6,28 +6,31 @@
 package org.opensearch.knn.index.codec.jvector;
 
 import io.github.jbellis.jvector.disk.ReaderSupplier;
-import io.github.jbellis.jvector.disk.ReaderSupplierFactory;
 import io.github.jbellis.jvector.graph.NodesIterator;
 import io.github.jbellis.jvector.graph.disk.OnDiskGraphIndex;
+import io.github.jbellis.jvector.vector.VectorSimilarityFunction;
+import io.github.jbellis.jvector.vector.VectorizationProvider;
 import io.github.jbellis.jvector.vector.types.VectorFloat;
+import io.github.jbellis.jvector.vector.types.VectorTypeSupport;
 import org.apache.lucene.index.FloatVectorValues;
 import org.apache.lucene.search.VectorScorer;
 
 import java.io.IOException;
-import java.nio.file.Path;
 
 public class JVectorFloatVectorValues extends FloatVectorValues {
+    private static final VectorTypeSupport VECTOR_TYPE_SUPPORT = VectorizationProvider.getInstance().getVectorTypeSupport();
+
     private final OnDiskGraphIndex onDiskGraphIndex;
     private final OnDiskGraphIndex.View view;
     private int docId = -1;
     private final NodesIterator nodesIterator;
-    private final ReaderSupplier readerSupplier;
+    private final VectorSimilarityFunction similarityFunction;
 
-    public JVectorFloatVectorValues(Path jvecFilePath) throws IOException {
-        this.readerSupplier = ReaderSupplierFactory.open(jvecFilePath);
+    public JVectorFloatVectorValues(ReaderSupplier readerSupplier, VectorSimilarityFunction similarityFunction) throws IOException {
         this.onDiskGraphIndex = OnDiskGraphIndex.load(readerSupplier);
         this.view = onDiskGraphIndex.getView();
         this.nodesIterator = onDiskGraphIndex.getNodes();
+        this.similarityFunction = similarityFunction;
     }
 
     @Override
@@ -40,13 +43,18 @@ public class JVectorFloatVectorValues extends FloatVectorValues {
         return onDiskGraphIndex.size();
     }
 
-    @Override
-    public float[] vectorValue() throws IOException {
+    public VectorFloat<?> vectorFloatValue() {
         if (!onDiskGraphIndex.containsNode(docId)) {
             throw new RuntimeException("DocId " + docId + " not found in graph");
         }
+
+        return view.getVector(docId);
+    }
+
+    @Override
+    public float[] vectorValue() throws IOException {
         try {
-            final VectorFloat<?> vector = view.getVector(docId);
+            final VectorFloat<?> vector = vectorFloatValue();
             return (float[])vector.get();
         } catch (Throwable e) {
             throw new RuntimeException(e);
@@ -56,7 +64,7 @@ public class JVectorFloatVectorValues extends FloatVectorValues {
 
     @Override
     public VectorScorer scorer(float[] query) throws IOException {
-        return null;
+        return new JVectorVectorScorer(this, VECTOR_TYPE_SUPPORT.createFloatVector(query), similarityFunction);
     }
 
     @Override

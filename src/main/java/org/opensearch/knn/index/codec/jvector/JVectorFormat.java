@@ -42,12 +42,12 @@ public class JVectorFormat extends KnnVectorsFormat {
 
     @Override
     public KnnVectorsWriter fieldsWriter(SegmentWriteState state) throws IOException {
-        return new JVectorWriter(state, null);
+        return new JVectorWriter(state);
     }
 
     @Override
     public KnnVectorsReader fieldsReader(SegmentReadState state) throws IOException {
-        return new JVectorReader(state, null);
+        return new JVectorReader(state);
     }
 
     static Path getVectorIndexPath(Path directoryBasePath, String baseDataFileName, String field) {

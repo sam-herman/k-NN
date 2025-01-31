@@ -31,12 +31,15 @@ import org.apache.lucene.util.packed.DirectMonotonicReader;
 
 import io.github.jbellis.jvector.disk.ReaderSupplierFactory;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 
 import static org.opensearch.knn.index.codec.jvector.JVectorWriter.FieldWriter.getVectorSimilarityFunction;
@@ -50,14 +53,15 @@ public class JVectorReader extends KnnVectorsReader {
     private final String baseDataFileName;
     private final Path directoryBasePath;
     //private final IntObjectHashMap<JVectorReader.FieldEntry> fields;
+    private final Map<String, ReaderSupplier> readerSupplierMap = new HashMap<>(1);
 
-    public JVectorReader(SegmentReadState state, FlatVectorsReader flatVectorsReader) throws IOException {
+
+    public JVectorReader(SegmentReadState state) throws IOException {
         this.fieldInfos = state.fieldInfos;
         this.baseDataFileName = state.segmentInfo.name + "_" + state.segmentSuffix;
         String metaFileName =
                 IndexFileNames.segmentFileName(
                         state.segmentInfo.name, state.segmentSuffix, JVectorFormat.META_EXTENSION);
-
         Directory dir = state.directory;
         while (!(dir instanceof FSDirectory)) {
             final String dirType = dir.getClass().getName();
@@ -88,9 +92,13 @@ public class JVectorReader extends KnnVectorsReader {
                             state.segmentInfo.name,
                             state.segmentSuffix,
                             JVectorFormat.VECTOR_INDEX_EXTENSION);
+
+            // TODO: read field names from the meta file
+            final ReaderSupplier readerSupplier = ReaderSupplierFactory.open(JVectorFormat.getVectorIndexPath(directoryBasePath, baseDataFileName, "test_field"));
+            readerSupplierMap.put("test_field", readerSupplier);
             success = true;
         } finally {
-            if (success == false) {
+            if (!success) {
                 IOUtils.closeWhileHandlingException(this);
             }
         }
@@ -104,9 +112,8 @@ public class JVectorReader extends KnnVectorsReader {
 
     @Override
     public FloatVectorValues getFloatVectorValues(String field) throws IOException {
-
-        final Path jvecFilePath = JVectorFormat.getVectorIndexPath(directoryBasePath, baseDataFileName, field);
-        return new JVectorFloatVectorValues(jvecFilePath);
+        // TODO: get the similarity function from field!! remove from here!
+        return new JVectorFloatVectorValues(readerSupplierMap.get(field), io.github.jbellis.jvector.vector.VectorSimilarityFunction.EUCLIDEAN);
     }
 
     @Override
@@ -117,37 +124,20 @@ public class JVectorReader extends KnnVectorsReader {
 
     @Override
     public void search(String field, float[] target, KnnCollector knnCollector, Bits acceptDocs) throws IOException {
-        /* TODO: remove this
-                *** score provider using the raw, in-memory vectors ***
-        FieldInfo fieldInfo = fieldInfos.fieldInfo(field);
-        FloatVectorValues floatVectorValues = flatVectorsReader.getFloatVectorValues(field);
-        var vectors = new ArrayList<VectorFloat<?>>(flatVectorsReader.getFloatVectorValues(field).size());
-        while (floatVectorValues.nextDoc() != DocIdSetIterator.NO_MORE_DOCS) {
-            vectors.add(VECTOR_TYPE_SUPPORT.createFloatVector(floatVectorValues.vectorValue()));
-        }
 
-        var originalDimension = fieldInfo.getVectorDimension();
-        assert originalDimension == vectors.get(0).length();
-        RandomAccessVectorValues randomAccessVectorValues = new ListRandomAccessVectorValues(vectors, originalDimension)
-         */
+        // load the index
+        // TODO: cache this
+        final OnDiskGraphIndex index = OnDiskGraphIndex.load(readerSupplierMap.get(field));
 
-        final Path jvecFilePath = JVectorFormat.getVectorIndexPath(directoryBasePath, baseDataFileName, field);
-        // on-disk indexes require a ReaderSupplier (not just a Reader) because we will want it to
-        // open additional readers for searching
-        try (ReaderSupplier rs = ReaderSupplierFactory.open(jvecFilePath)) {
-            OnDiskGraphIndex index = OnDiskGraphIndex.load(rs);
-
-            // search for a random vector using a GraphSearcher and SearchScoreProvider
-            VectorFloat<?> q = VECTOR_TYPE_SUPPORT.createFloatVector(target);
-            try (GraphSearcher searcher = new GraphSearcher(index)) {
-                SearchScoreProvider ssp = SearchScoreProvider.exact(q, io.github.jbellis.jvector.vector.VectorSimilarityFunction.EUCLIDEAN, index.getView());
-                SearchResult sr = searcher.search(ssp, knnCollector.k(), io.github.jbellis.jvector.util.Bits.ALL);
-                for (SearchResult.NodeScore ns : sr.getNodes()) {
-                    knnCollector.collect(ns.node, ns.score);
-                }
+        // search for a random vector using a GraphSearcher and SearchScoreProvider
+        VectorFloat<?> q = VECTOR_TYPE_SUPPORT.createFloatVector(target);
+        try (GraphSearcher searcher = new GraphSearcher(index)) {
+            SearchScoreProvider ssp = SearchScoreProvider.exact(q, io.github.jbellis.jvector.vector.VectorSimilarityFunction.EUCLIDEAN, index.getView());
+            SearchResult sr = searcher.search(ssp, knnCollector.k(), io.github.jbellis.jvector.util.Bits.ALL);
+            for (SearchResult.NodeScore ns : sr.getNodes()) {
+                knnCollector.collect(ns.node, ns.score);
             }
         }
-
     }
 
     @Override
@@ -157,8 +147,9 @@ public class JVectorReader extends KnnVectorsReader {
 
     @Override
     public void close() throws IOException {
-        // TODO: also close the vectorIndex
-        //IOUtils.close(vectorIndex);
+        for (ReaderSupplier readerSupplier : readerSupplierMap.values()) {
+            IOUtils.close(readerSupplier::close);
+        }
     }
 
     @Override

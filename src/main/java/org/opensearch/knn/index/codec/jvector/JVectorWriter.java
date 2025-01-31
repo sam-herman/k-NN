@@ -19,9 +19,6 @@ import lombok.extern.log4j.Log4j2;
 import org.apache.lucene.codecs.CodecUtil;
 import org.apache.lucene.codecs.KnnFieldVectorsWriter;
 import org.apache.lucene.codecs.KnnVectorsWriter;
-import org.apache.lucene.codecs.hnsw.FlatFieldVectorsWriter;
-import org.apache.lucene.codecs.hnsw.FlatVectorsScorer;
-import org.apache.lucene.codecs.hnsw.FlatVectorsWriter;
 import org.apache.lucene.index.*;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.store.*;
@@ -31,11 +28,7 @@ import org.apache.lucene.util.RamUsageEstimator;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
-
-import static org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsReader.SIMILARITY_FUNCTIONS;
-
 
 @Log4j2
 public class JVectorWriter extends KnnVectorsWriter {
@@ -188,20 +181,20 @@ public class JVectorWriter extends KnnVectorsWriter {
         int[][] graphLevelNodeOffsets = writeGraph(graph, fieldData);
         //long vectorIndexLength = vectorIndex.getFilePointer() - vectorIndexOffset;
 
-        /*
+
         writeMeta(
                 fieldData.fieldInfo,
-                vectorIndexOffset,
-                vectorIndexLength,
-                fieldData.getDocsWithFieldSet().cardinality(),
+                0, // TODO: write proper value
+                0, // TODO: write proper value
+                fieldData.randomAccessVectorValues.size(),
                 graph,
                 graphLevelNodeOffsets);
 
-         */
+
     }
 
 
-    /*
+
     private void writeMeta(
             FieldInfo field,
             long vectorIndexOffset,
@@ -212,10 +205,11 @@ public class JVectorWriter extends KnnVectorsWriter {
             throws IOException {
         meta.writeInt(field.number);
         meta.writeInt(field.getVectorEncoding().ordinal());
-        meta.writeInt(distFuncToOrd(field.getVectorSimilarityFunction()));
+        meta.writeInt(JVectorReader.VectorSimilarityMapper.distFuncToOrd(field.getVectorSimilarityFunction()));
         meta.writeVLong(vectorIndexOffset);
         meta.writeVLong(vectorIndexLength);
         meta.writeVInt(field.getVectorDimension());
+        /*
         meta.writeInt(count);
         // write graph nodes on each level
         if (graph == null) {
@@ -261,8 +255,9 @@ public class JVectorWriter extends KnnVectorsWriter {
             memoryOffsetsWriter.finish();
             meta.writeLong(vectorIndex.getFilePointer() - start);
         }
+         */
     }
-    */
+
 
     // TODO: implement this for proper return type
     private int[][] writeGraph(OnHeapGraphIndex graph, FieldWriter<?> fieldData) throws IOException {
@@ -291,17 +286,9 @@ public class JVectorWriter extends KnnVectorsWriter {
         return null;
     }
 
-    static int distFuncToOrd(VectorSimilarityFunction func) {
-        for (int i = 0; i < SIMILARITY_FUNCTIONS.size(); i++) {
-            if (SIMILARITY_FUNCTIONS.get(i).equals(func)) {
-                return (byte) i;
-            }
-        }
-        throw new IllegalArgumentException("invalid distance function: " + func);
-    }
-
     @Override
     public void finish() throws IOException {
+        log.info("Finishing segment {}", segmentWriteState.segmentInfo.name);
         if (finished) {
             throw new IllegalStateException("already finished");
         }
@@ -312,6 +299,7 @@ public class JVectorWriter extends KnnVectorsWriter {
             meta.writeInt(-1);
             CodecUtil.writeFooter(meta);
         }
+
         if (vectorIndex != null) {
             CodecUtil.writeFooter(vectorIndex);
         }
@@ -415,6 +403,8 @@ public class JVectorWriter extends KnnVectorsWriter {
                     return io.github.jbellis.jvector.vector.VectorSimilarityFunction.EUCLIDEAN;
                 case COSINE:
                     return io.github.jbellis.jvector.vector.VectorSimilarityFunction.COSINE;
+                case DOT_PRODUCT:
+                    return io.github.jbellis.jvector.vector.VectorSimilarityFunction.DOT_PRODUCT;
                 default:
                     throw new IllegalArgumentException("Unsupported similarity function: " + fieldInfo.getVectorSimilarityFunction());
             }

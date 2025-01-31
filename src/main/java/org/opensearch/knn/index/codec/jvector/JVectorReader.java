@@ -7,11 +7,8 @@ package org.opensearch.knn.index.codec.jvector;
 
 import io.github.jbellis.jvector.disk.ReaderSupplier;
 import io.github.jbellis.jvector.graph.GraphSearcher;
-import io.github.jbellis.jvector.graph.ListRandomAccessVectorValues;
-import io.github.jbellis.jvector.graph.RandomAccessVectorValues;
 import io.github.jbellis.jvector.graph.SearchResult;
 import io.github.jbellis.jvector.graph.disk.OnDiskGraphIndex;
-import io.github.jbellis.jvector.graph.similarity.BuildScoreProvider;
 import io.github.jbellis.jvector.graph.similarity.SearchScoreProvider;
 import io.github.jbellis.jvector.vector.VectorizationProvider;
 import io.github.jbellis.jvector.vector.types.VectorFloat;
@@ -19,29 +16,24 @@ import io.github.jbellis.jvector.vector.types.VectorTypeSupport;
 import lombok.extern.log4j.Log4j2;
 import org.apache.lucene.codecs.CodecUtil;
 import org.apache.lucene.codecs.KnnVectorsReader;
-import org.apache.lucene.codecs.hnsw.FlatVectorsReader;
 import org.apache.lucene.index.*;
-import org.apache.lucene.internal.hppc.IntObjectHashMap;
-import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.KnnCollector;
 import org.apache.lucene.store.*;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.packed.DirectMonotonicReader;
-
+import io.github.jbellis.jvector.vector.VectorSimilarityFunction;
 import io.github.jbellis.jvector.disk.ReaderSupplierFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.ArrayList;
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 
+import static org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsReader.readVectorEncoding;
 import static org.opensearch.knn.index.codec.jvector.JVectorWriter.FieldWriter.getVectorSimilarityFunction;
 
 @Log4j2
@@ -52,8 +44,8 @@ public class JVectorReader extends KnnVectorsReader {
     private final String indexDataFileName;
     private final String baseDataFileName;
     private final Path directoryBasePath;
-    //private final IntObjectHashMap<JVectorReader.FieldEntry> fields;
-    private final Map<String, ReaderSupplier> readerSupplierMap = new HashMap<>(1);
+    // Maps field name to field entries
+    private final Map<String, FieldEntry> fieldEntryMap = new HashMap<>(1);
 
 
     public JVectorReader(SegmentReadState state) throws IOException {
@@ -85,7 +77,8 @@ public class JVectorReader extends KnnVectorsReader {
                     JVectorFormat.VERSION_CURRENT,
                     state.segmentInfo.getId(),
                     state.segmentSuffix);
-            //readFields(meta);
+            readFields(meta);
+            CodecUtil.checkFooter(meta);
 
             this.indexDataFileName =
                     IndexFileNames.segmentFileName(
@@ -93,9 +86,6 @@ public class JVectorReader extends KnnVectorsReader {
                             state.segmentSuffix,
                             JVectorFormat.VECTOR_INDEX_EXTENSION);
 
-            // TODO: read field names from the meta file
-            final ReaderSupplier readerSupplier = ReaderSupplierFactory.open(JVectorFormat.getVectorIndexPath(directoryBasePath, baseDataFileName, "test_field"));
-            readerSupplierMap.put("test_field", readerSupplier);
             success = true;
         } finally {
             if (!success) {
@@ -113,7 +103,7 @@ public class JVectorReader extends KnnVectorsReader {
     @Override
     public FloatVectorValues getFloatVectorValues(String field) throws IOException {
         // TODO: get the similarity function from field!! remove from here!
-        return new JVectorFloatVectorValues(readerSupplierMap.get(field), io.github.jbellis.jvector.vector.VectorSimilarityFunction.EUCLIDEAN);
+        return new JVectorFloatVectorValues(fieldEntryMap.get(field).index, io.github.jbellis.jvector.vector.VectorSimilarityFunction.EUCLIDEAN);
     }
 
     @Override
@@ -127,7 +117,7 @@ public class JVectorReader extends KnnVectorsReader {
 
         // load the index
         // TODO: cache this
-        final OnDiskGraphIndex index = OnDiskGraphIndex.load(readerSupplierMap.get(field));
+        final OnDiskGraphIndex index = fieldEntryMap.get(field).index;
 
         // search for a random vector using a GraphSearcher and SearchScoreProvider
         VectorFloat<?> q = VECTOR_TYPE_SUPPORT.createFloatVector(target);
@@ -147,8 +137,8 @@ public class JVectorReader extends KnnVectorsReader {
 
     @Override
     public void close() throws IOException {
-        for (ReaderSupplier readerSupplier : readerSupplierMap.values()) {
-            IOUtils.close(readerSupplier::close);
+        for (FieldEntry fieldEntry : fieldEntryMap.values()) {
+            IOUtils.close(fieldEntry.readerSupplier::close);
         }
     }
 
@@ -157,134 +147,79 @@ public class JVectorReader extends KnnVectorsReader {
         return 0;
     }
 
-    /*
+
     private void readFields(ChecksumIndexInput meta) throws IOException {
-        for (FieldInfo info : fieldInfos) {
-            if (info.hasVectors()) {
-                final FieldEntry fieldEntry = readField(meta, info);
-                //validateFieldEntry(info, fieldEntry);
-                fields.put(info.number, fieldEntry);
-
-            }
+        for (int fieldNumber = meta.readInt(); fieldNumber != -1; fieldNumber = meta.readInt()) {
+            final FieldInfo fieldInfo = fieldInfos.fieldInfo(fieldNumber); // read field number)
+            final VectorEncoding vectorEncoding = readVectorEncoding(meta);
+            final VectorSimilarityFunction similarityFunction = VectorSimilarityMapper.ordToDistFunc(meta.readInt());
+            final long vectorIndexOffset = meta.readVLong();
+            final long vectorIndexLength = meta.readVLong();
+            final int dimension = meta.readVInt();
+            fieldEntryMap.put(fieldInfo.name, new FieldEntry(fieldInfo, similarityFunction, vectorEncoding, vectorIndexOffset, vectorIndexLength, dimension));
         }
     }
 
-    private FieldEntry readField(IndexInput input, FieldInfo info) throws IOException {
-        VectorEncoding vectorEncoding = readVectorEncoding(input);
-        VectorSimilarityFunction similarityFunction = readSimilarityFunction(input);
-        if (similarityFunction != info.getVectorSimilarityFunction()) {
-            throw new IllegalStateException(
-                    "Inconsistent vector similarity function for field=\""
-                            + info.name
-                            + "\"; "
-                            + similarityFunction
-                            + " != "
-                            + info.getVectorSimilarityFunction());
-        }
-        return FieldEntry.create(input, vectorEncoding, info.getVectorSimilarityFunction());
-    }
-    */
-    static class FieldEntry {
-            VectorSimilarityFunction similarityFunction;
-            VectorEncoding vectorEncoding;
-            long vectorIndexOffset;
-            long vectorIndexLength;
-            int M;
-            int numLevels;
-            int dimension;
-            int size;
-            int[][] nodesByLevel;
-            // for each level the start offsets in vectorIndex file from where to read neighbours
-            DirectMonotonicReader.Meta offsetsMeta;
-            long offsetsOffset;
-            int offsetsBlockShift;
-            long offsetsLength;
+    class FieldEntry {
+        private final FieldInfo fieldInfo;
+        private final VectorEncoding vectorEncoding;
+        private final VectorSimilarityFunction similarityFunction;
+        private final long vectorIndexOffset;
+        private final long vectorIndexLength;
+        private final int dimension;
+        private final ReaderSupplier readerSupplier;
+        private final OnDiskGraphIndex index;
 
-        FieldEntry(
+        public FieldEntry(
+                FieldInfo fieldInfo,
                 VectorSimilarityFunction similarityFunction,
                 VectorEncoding vectorEncoding,
                 long vectorIndexOffset,
                 long vectorIndexLength,
-                int M,
-                int numLevels,
-                int dimension,
-                int size,
-                int[][] nodesByLevel,
-                DirectMonotonicReader.Meta offsetsMeta,
-                long offsetsOffset,
-                int offsetsBlockShift,
-                long offsetsLength) {
+                int dimension) throws IOException {
+            this.fieldInfo = fieldInfo;
             this.similarityFunction = similarityFunction;
             this.vectorEncoding = vectorEncoding;
             this.vectorIndexOffset = vectorIndexOffset;
             this.vectorIndexLength = vectorIndexLength;
-            this.M = M;
-            this.numLevels = numLevels;
             this.dimension = dimension;
-            this.size = size;
-            this.nodesByLevel = nodesByLevel;
-            this.offsetsMeta = offsetsMeta;
-            this.offsetsOffset = offsetsOffset;
-            this.offsetsBlockShift = offsetsBlockShift;
-            this.offsetsLength = offsetsLength;
-        }
-
-        static FieldEntry create(
-                IndexInput input,
-                VectorEncoding vectorEncoding,
-                VectorSimilarityFunction similarityFunction)
-        throws IOException {
-            final var vectorIndexOffset = input.readVLong();
-            final var vectorIndexLength = input.readVLong();
-            final var dimension = input.readVInt();
-            final var size = input.readInt();
-            // read nodes by level
-            final var M = input.readVInt();
-            final var numLevels = input.readVInt();
-            final var nodesByLevel = new int[numLevels][];
-            long numberOfOffsets = 0;
-            final long offsetsOffset;
-            final int offsetsBlockShift;
-            final DirectMonotonicReader.Meta offsetsMeta;
-            final long offsetsLength;
-            for (int level = 0; level < numLevels; level++) {
-                if (level > 0) {
-                    int numNodesOnLevel = input.readVInt();
-                    numberOfOffsets += numNodesOnLevel;
-                    nodesByLevel[level] = new int[numNodesOnLevel];
-                    nodesByLevel[level][0] = input.readVInt();
-                    for (int i = 1; i < numNodesOnLevel; i++) {
-                        nodesByLevel[level][i] = nodesByLevel[level][i - 1] + input.readVInt();
-                    }
-                } else {
-                    numberOfOffsets += size;
-                }
-            }
-            if (numberOfOffsets > 0) {
-                offsetsOffset = input.readLong();
-                offsetsBlockShift = input.readVInt();
-                offsetsMeta = DirectMonotonicReader.loadMeta(input, numberOfOffsets, offsetsBlockShift);
-                offsetsLength = input.readLong();
-            } else {
-                offsetsOffset = 0;
-                offsetsBlockShift = 0;
-                offsetsMeta = null;
-                offsetsLength = 0;
-            }
-            return new FieldEntry(
-                    similarityFunction,
-                    vectorEncoding,
-                    vectorIndexOffset,
-                    vectorIndexLength,
-                    M,
-                    numLevels,
-                    dimension,
-                    size,
-                    nodesByLevel,
-                    offsetsMeta,
-                    offsetsOffset,
-                    offsetsBlockShift,
-                    offsetsLength);
+            this.readerSupplier = ReaderSupplierFactory.open(JVectorFormat.getVectorIndexPath(directoryBasePath, baseDataFileName, fieldInfo.name));
+            this.index = OnDiskGraphIndex.load(readerSupplier);
         }
     }
+
+
+    /**
+     * Utility class to map between Lucene and jVector similarity functions and metadata ordinals.
+     */
+    public static class VectorSimilarityMapper {
+        /**
+         List of vector similarity functions supported by <a href="https://github.com/jbellis/jvector">jVector library</a>
+         The similarity functions orders matter in this list because it is later used to resolve the similarity function by ordinal.
+         */
+        public static final List<VectorSimilarityFunction> JVECTOR_SUPPORTED_SIMILARITY_FUNCTIONS =
+                List.of(
+                        VectorSimilarityFunction.EUCLIDEAN,
+                        VectorSimilarityFunction.DOT_PRODUCT,
+                        VectorSimilarityFunction.COSINE);
+
+        public static final Map<org.apache.lucene.index.VectorSimilarityFunction, VectorSimilarityFunction> luceneToJVectorMap = Map.of(
+                org.apache.lucene.index.VectorSimilarityFunction.EUCLIDEAN, VectorSimilarityFunction.EUCLIDEAN,
+                org.apache.lucene.index.VectorSimilarityFunction.DOT_PRODUCT, VectorSimilarityFunction.DOT_PRODUCT,
+                org.apache.lucene.index.VectorSimilarityFunction.COSINE, VectorSimilarityFunction.COSINE
+        );
+
+        public static int distFuncToOrd(org.apache.lucene.index.VectorSimilarityFunction func) {
+            if (luceneToJVectorMap.containsKey(func)) {
+                return JVECTOR_SUPPORTED_SIMILARITY_FUNCTIONS.indexOf(luceneToJVectorMap.get(func));
+            }
+
+            throw new IllegalArgumentException("invalid distance function: " + func);
+        }
+
+        public static VectorSimilarityFunction ordToDistFunc(int ord) {
+            return JVECTOR_SUPPORTED_SIMILARITY_FUNCTIONS.get(ord);
+        }
+    }
+
 }

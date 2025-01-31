@@ -26,8 +26,8 @@ public class JVectorFloatVectorValues extends FloatVectorValues {
     private final NodesIterator nodesIterator;
     private final VectorSimilarityFunction similarityFunction;
 
-    public JVectorFloatVectorValues(ReaderSupplier readerSupplier, VectorSimilarityFunction similarityFunction) throws IOException {
-        this.onDiskGraphIndex = OnDiskGraphIndex.load(readerSupplier);
+    public JVectorFloatVectorValues(OnDiskGraphIndex onDiskGraphIndex, VectorSimilarityFunction similarityFunction) throws IOException {
+        this.onDiskGraphIndex = onDiskGraphIndex;
         this.view = onDiskGraphIndex.getView();
         this.nodesIterator = onDiskGraphIndex.getNodes();
         this.similarityFunction = similarityFunction;
